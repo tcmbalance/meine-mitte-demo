@@ -2,7 +2,7 @@
 import streamlit as st
 from datetime import date
 
-st.set_page_config(page_title="Meine Mitte V3", page_icon="🌿", layout="centered")
+st.set_page_config(page_title="Meine Mitte V4", page_icon="🌿", layout="centered")
 
 # DEMO ONLY: fictional local session data
 if "client" not in st.session_state:
@@ -44,7 +44,7 @@ def breakfast_for(day):
 
 def katharina():
     st.title("Katharina-Dashboard 🪴")
-    st.caption("V3 – 14-Tage-Demo mit fiktiver Maria. Keine echten Klientinnendaten.")
+    st.caption("V4 – 14-Tage-Demo mit Verlaufsblick und automatischer Anpassung. Keine echten Klientinnendaten.")
 
     x,y,z = st.columns(3)
     x.metric("Tag", f"{C['day']}/14")
@@ -74,6 +74,32 @@ def katharina():
     else:
         st.success("Begleitrichtung für die Demo freigegeben.")
 
+    if C["history"]:
+        last = C["history"][-1]
+        st.subheader("Was ist seit gestern passiert?")
+        reaction_text = ", ".join(last.get("reaction", [])) if last.get("reaction") else "keine besondere Reaktion gemeldet"
+        st.markdown(
+            f"""
+            **Maria – jetzt Tag {C['day']}**  
+            🔸 Schlaf: {last['sleep']}  
+            🔸 Körpergefühl: {last['body']}  
+            🔸 Frühstück: {last['food']}  
+            🔸 Reaktion: {reaction_text}
+            """
+        )
+
+        if last["food"] == "körperlich nicht gut":
+            st.info(
+                "**Systemeinschätzung:** Die gestrige Frühstücksvariante wird pausiert. "
+                "Die Begleitrichtung bleibt vorerst bestehen, aber die Zusammensetzung wird verändert. "
+                "Verdauungsreaktion und Thermik werden weiter beobachtet."
+            )
+            st.write("**Nächster Schritt:** warm und gekocht beibehalten, Frühstücksart wechseln und Reaktion erneut prüfen.")
+            if not C["alerts"]:
+                st.success("**Katharina-Blick:** aktuell Beobachtung – noch keine zwingende persönliche Intervention.")
+        else:
+            st.success("**Systemeinschätzung:** bisher kein Anlass für eine sofortige Richtungsänderung.")
+
     if C["alerts"]:
         st.subheader("Katharina-Blick empfohlen")
         for alert in C["alerts"]:
@@ -102,7 +128,18 @@ def maria():
     body = st.radio("Wie fühlt sich dein Körper heute an?", ["warm und angenehm", "eher kalt", "schwer / träge", "leicht", "innerlich gestaut / angespannt"], index=None)
 
     title, desc = breakfast_for(C["day"])
-    card("Dein Frühstück heute", f"<b>{title}</b><br>{desc}<br><span class='small'>Nicht direkt kalt aus dem Kühlschrank. In Ruhe essen.</span>")
+    if C.get("breakfast_status") == "pause":
+        alternatives = [
+            ("Warmes Reis-Congee, mild", "Reis sehr weich kochen und heute bewusst schlicht halten."),
+            ("Pikantes Hirse-Gemüse-Frühstück", "Hirse warm mit mild gedünstetem Gemüse kombinieren."),
+            ("Warme Polenta, mild pikant", "Polenta weich kochen und mit mildem gedünstetem Gemüse ergänzen.")
+        ]
+        title, desc = alternatives[(C["day"]-2) % len(alternatives)]
+        card("Heute passen wir dein Frühstück an",
+             f"Gestern hat dein Körper deutlich reagiert. Deshalb wiederholen wir die Variante nicht.<br><br>"
+             f"<b>{title}</b><br>{desc}<br><span class='small'>Warm und gekocht bleibt die Richtung – die Zusammensetzung wechselt.</span>")
+    else:
+        card("Dein Frühstück heute", f"<b>{title}</b><br>{desc}<br><span class='small'>Nicht direkt kalt aus dem Kühlschrank. In Ruhe essen.</span>")
 
     food = st.radio("Wie ist dir das Frühstück bekommen?",
                     ["gut", "geschmacklich nicht meins", "körperlich nicht gut"], index=None)
@@ -130,6 +167,9 @@ def maria():
         C["history"].append(entry)
 
         # Simplified demo re-check logic
+        if food == "gut" and C.get("breakfast_status") == "pause":
+            C["breakfast_status"] = None
+
         if food == "körperlich nicht gut" and reaction:
             C["breakfast_status"] = "pause"
             heat = "Hitzegefühl / starkes Schwitzen" in reaction or "trockener / schwieriger Stuhl" in reaction
