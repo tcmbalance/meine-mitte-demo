@@ -2,7 +2,7 @@
 import streamlit as st
 from datetime import date
 
-st.set_page_config(page_title="Meine Mitte V12", page_icon="🌿", layout="centered")
+st.set_page_config(page_title="Meine Mitte V13", page_icon="🌿", layout="centered")
 
 # DEMO ONLY: fictional local session data
 if "client" not in st.session_state:
@@ -36,10 +36,11 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 a,b = st.columns(2)
+client_nav_name = C.get("name", "Klientin").strip() or "Klientin"
 with a:
     if st.button("🪴 Katharina", use_container_width=True): st.session_state.view="katharina"; st.rerun()
 with b:
-    if st.button("🌿 Maria", use_container_width=True): st.session_state.view="maria"; st.rerun()
+    if st.button(f"🌿 {client_nav_name}", use_container_width=True): st.session_state.view="maria"; st.rerun()
 
 def card(title, body):
     st.markdown(f'<div class="card"><h3>{title}</h3><p>{body}</p></div>', unsafe_allow_html=True)
@@ -406,7 +407,7 @@ def client_anamnesis():
         "Bevor deine Begleitung startet, möchte ich ein erstes Bild von deinem Alltag und deinem Körpergefühl bekommen. "
         "Es geht nicht darum, etwas perfekt zu beantworten."
     )
-    st.caption("V12 ist eine Demo. Bitte hier noch keine echten Gesundheitsdaten von Klientinnen eingeben.")
+    st.caption("V13 ist eine Demo. Bitte hier noch keine echten Gesundheitsdaten von Klientinnen eingeben.")
 
     with st.form("anamnesis_form"):
         name = st.text_input("Wie darf ich dich ansprechen?", value=C.get("name", "Maria"))
@@ -460,6 +461,29 @@ def client_anamnesis():
         other_veg = st.text_input(
             "Dein Gemüse ist nicht dabei?",
             placeholder="Weitere Gemüsesorten mit Komma trennen"
+        )
+
+        emotions = st.multiselect(
+            "Wie geht es dir emotional im Moment?",
+            [
+                "ausgeglichen",
+                "ängstlich",
+                "unsicher",
+                "wenig Selbstvertrauen / wenig Selbstbewusstsein",
+                "Panikgefühle",
+                "depressive Verstimmung / niedergeschlagen",
+                "viel Wut / Ärger",
+                "gereizt",
+                "innerlich angespannt",
+                "grübelnd / viele Gedanken",
+                "traurig",
+                "überfordert",
+                "erschöpft",
+                "antriebslos",
+                "emotional wechselhaft",
+                "Rückzug / möchte eher allein sein",
+            ],
+            help="Mehrfachauswahl möglich. Die Angaben sind Hinweise für Katharinas Gesamtblick und keine psychische Diagnose."
         )
 
         free_note = st.text_area("Gibt es noch etwas, das Katharina wissen sollte?")
@@ -539,6 +563,8 @@ def katharina():
         current_heat_signals.append("überwiegend heiß / viel Schwitzen")
 
     dominant = ranked[0][0] if ranked and ranked[0][1] > 0 else None
+    underlying_ranked = [(name, score) for name, score in ranked if name != "Hitzehinweise" and score > 0]
+    underlying_pattern = underlying_ranked[0][0] if underlying_ranked else None
     relevant_heat = len(current_heat_signals) >= 1 and scores.get("Hitzehinweise", 0) >= 3
 
     if relevant_heat:
@@ -546,12 +572,15 @@ def katharina():
             "Aktuell relevante Hitzehinweise wurden genannt: "
             + ", ".join(current_heat_signals)
             + ". Die Demo schlägt deshalb vor, Hitze kurzfristig zuerst zu berücksichtigen und nicht weiter zu fördern. "
-              "Danach das dominante Grundmuster erneut priorisieren"
-            + (f" – derzeit: {dominant}." if dominant else ".")
+              "Danach das nächste relevante Grundmuster ohne Hitzehinweise priorisieren"
+            + (f" – derzeit: {underlying_pattern}." if underlying_pattern else ".")
         )
-        st.write("**Vorgeschlagene Reihenfolge:** Hitze kurzfristig berücksichtigen → "
-                 + (dominant if dominant and dominant != "Hitzehinweise" else "Grundmuster erneut prüfen")
-                 + (" → Mitte stärken." if dominant != "Mitte stärken" else "."))
+        sequence = "Hitze kurzfristig berücksichtigen"
+        if underlying_pattern:
+            sequence += f" → {underlying_pattern}"
+        if underlying_pattern != "Mitte stärken" and scores.get("Mitte stärken", 0) > 0:
+            sequence += " → Mitte stärken"
+        st.write("**Vorgeschlagene Reihenfolge:** " + sequence + ".")
         if scores.get("Feuchtigkeit", 0) >= 4:
             st.info(
                 "Feuchtigkeit ist gleichzeitig deutlich gewichtet. Der Hitzehinweis wird hier nicht wegen der bloßen Punktzahl vorgezogen, "
