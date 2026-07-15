@@ -2,7 +2,7 @@
 import streamlit as st
 from datetime import date
 
-st.set_page_config(page_title="Meine Mitte V11", page_icon="🌿", layout="centered")
+st.set_page_config(page_title="Meine Mitte V12", page_icon="🌿", layout="centered")
 
 # DEMO ONLY: fictional local session data
 if "client" not in st.session_state:
@@ -219,11 +219,20 @@ KITCHEN_COMPONENTS = {
         {"name": "Buchweizen", "ingredients": {"Buchweizen"}, "tags": {"neutral"}},
     ],
     "vegetables": [
-        {"name": "Zucchini", "ingredients": {"Zucchini"}, "tags": {"mild"}},
-        {"name": "Karotte", "ingredients": {"Karotte"}, "tags": {"mild"}},
-        {"name": "Fenchel", "ingredients": {"Fenchel"}, "tags": {"aromatisch"}},
-        {"name": "Kürbis", "ingredients": {"Kürbis"}, "tags": {"mild"}},
-        {"name": "Kohlrabi", "ingredients": {"Kohlrabi"}, "tags": {"mild"}},
+        {"name": name, "ingredients": {name}, "tags": {"gemuese"}}
+        for name in [
+            "Artischocke", "Aubergine", "Bambussprossen", "Batate / Süßkartoffel",
+            "Blumenkohl", "Brokkoli", "Brunnenkresse", "Chicorée", "Chinakohl",
+            "Endivie", "Erbsen", "Fenchel", "Fisolen / grüne Bohnen", "Frühlingszwiebel",
+            "Gurke", "Karotte / Möhre", "Kartoffel", "Knollensellerie", "Kohlrabi",
+            "Kopfsalat", "Kresse", "Kürbis", "Lauch / Porree", "Mangold", "Okra",
+            "Pak Choi", "Paprika", "Pastinake", "Petersilienwurzel", "Radicchio",
+            "Radieschen", "Rettich", "Romanesco", "Rosenkohl", "Rote Bete / Rote Rübe",
+            "Rotkohl / Rotkraut", "Rucola", "Schwarzwurzel", "Selleriestange / Stangensellerie",
+            "Spargel grün", "Spargel weiß", "Spinat", "Spitzkohl", "Staudensellerie",
+            "Steckrübe", "Tomate", "Topinambur", "Weißkohl / Weißkraut", "Wirsing",
+            "Zucchini", "Zuckererbsen", "Zuckermais", "Zwiebel"
+        ]
     ],
     "extras": [
         {"name": "Ei", "ingredients": {"Ei"}, "tags": {"protein"}},
@@ -397,7 +406,7 @@ def client_anamnesis():
         "Bevor deine Begleitung startet, möchte ich ein erstes Bild von deinem Alltag und deinem Körpergefühl bekommen. "
         "Es geht nicht darum, etwas perfekt zu beantworten."
     )
-    st.caption("V11 ist eine Demo. Bitte hier noch keine echten Gesundheitsdaten von Klientinnen eingeben.")
+    st.caption("V12 ist eine Demo. Bitte hier noch keine echten Gesundheitsdaten von Klientinnen eingeben.")
 
     with st.form("anamnesis_form"):
         name = st.text_input("Wie darf ich dich ansprechen?", value=C.get("name", "Maria"))
@@ -445,7 +454,12 @@ def client_anamnesis():
 
         liked_veg = st.multiselect(
             "Welches Gemüse magst du gerne?",
-            [v["name"] for v in KITCHEN_COMPONENTS["vegetables"]]
+            [v["name"] for v in KITCHEN_COMPONENTS["vegetables"]],
+            help="Mehrfachauswahl möglich. Die Auswahl dient vor allem Geschmack und Alltagstauglichkeit."
+        )
+        other_veg = st.text_input(
+            "Dein Gemüse ist nicht dabei?",
+            placeholder="Weitere Gemüsesorten mit Komma trennen"
         )
 
         free_note = st.text_area("Gibt es noch etwas, das Katharina wissen sollte?")
@@ -466,7 +480,8 @@ def client_anamnesis():
         }
         C["name"] = name
         C["breakfast_preference"] = pref_map[breakfast_pref]
-        C["liked_vegetables"] = liked_veg
+        extra_veg = [x.strip() for x in other_veg.split(",") if x.strip()]
+        C["liked_vegetables"] = list(dict.fromkeys(liked_veg + extra_veg))
         C["anamnesis"] = {
             "digestion": digestion, "body": body, "food_habits": food_habits,
             "thermal": thermal, "sleep": sleep, "energy": energy,
@@ -512,15 +527,47 @@ def katharina():
         for item in assessment["contradictions"]:
             st.warning(item)
 
-    st.subheader("Systemvorschlag für Katharina")
-    top_names = [name for name, score in ranked if score > 0][:3]
-    if top_names:
-        st.info(
-            "Vorrangig prüfen: " + " → ".join(top_names) + ". "
-            "Die Reihenfolge ist eine vorläufige Gewichtung aus der Demo-Anamnese und muss von Katharina fachlich freigegeben oder korrigiert werden."
+    st.subheader("Katharina-Blick – Prioritätsvorschlag")
+    current_heat_signals = []
+    if "Hitzegefühl" in a.get("body", []):
+        current_heat_signals.append("Hitzegefühl")
+    if "starkes Schwitzen" in a.get("body", []):
+        current_heat_signals.append("starkes Schwitzen")
+    if "innere Unruhe mit Wärme" in a.get("body", []):
+        current_heat_signals.append("innere Unruhe mit Wärme")
+    if a.get("thermal") == "eher heiß / viel Schwitzen":
+        current_heat_signals.append("überwiegend heiß / viel Schwitzen")
+
+    dominant = ranked[0][0] if ranked and ranked[0][1] > 0 else None
+    relevant_heat = len(current_heat_signals) >= 1 and scores.get("Hitzehinweise", 0) >= 3
+
+    if relevant_heat:
+        st.warning(
+            "Aktuell relevante Hitzehinweise wurden genannt: "
+            + ", ".join(current_heat_signals)
+            + ". Die Demo schlägt deshalb vor, Hitze kurzfristig zuerst zu berücksichtigen und nicht weiter zu fördern. "
+              "Danach das dominante Grundmuster erneut priorisieren"
+            + (f" – derzeit: {dominant}." if dominant else ".")
         )
+        st.write("**Vorgeschlagene Reihenfolge:** Hitze kurzfristig berücksichtigen → "
+                 + (dominant if dominant and dominant != "Hitzehinweise" else "Grundmuster erneut prüfen")
+                 + (" → Mitte stärken." if dominant != "Mitte stärken" else "."))
+        if scores.get("Feuchtigkeit", 0) >= 4:
+            st.info(
+                "Feuchtigkeit ist gleichzeitig deutlich gewichtet. Der Hitzehinweis wird hier nicht wegen der bloßen Punktzahl vorgezogen, "
+                "sondern als kurzfristige Prioritätsprüfung vor einer möglichen ungünstigen Kombination von Hitze- und Feuchtigkeitshinweisen."
+            )
     else:
-        st.info("Aus der Demo-Anamnese ergibt sich noch keine klare Gewichtung.")
+        top_names = [name for name, score in ranked if score > 0][:3]
+        if top_names:
+            st.info(
+                "Vorrangig prüfen: " + " → ".join(top_names) + ". "
+                "Die Reihenfolge ist eine vorläufige Gewichtung aus der Demo-Anamnese und muss von Katharina fachlich freigegeben oder korrigiert werden."
+            )
+        else:
+            st.info("Aus der Demo-Anamnese ergibt sich noch keine klare Gewichtung.")
+
+    st.caption("Prioritätsvorschlag = interne Demo-Entscheidungshilfe, keine Diagnose und keine automatische Behandlungsempfehlung.")
 
     st.write("**Freie Angabe der Klientin:** " + (a.get("free_note") or "keine"))
 
