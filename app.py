@@ -2,7 +2,7 @@
 import streamlit as st
 from datetime import date
 
-st.set_page_config(page_title="Meine Mitte V9", page_icon="🌿", layout="centered")
+st.set_page_config(page_title="Meine Mitte V10", page_icon="🌿", layout="centered")
 
 # DEMO ONLY: fictional local session data
 if "client" not in st.session_state:
@@ -19,6 +19,7 @@ C.setdefault("breakfast_preference", "ausprobieren")
 C.setdefault("kitchen_dislikes", [])
 C.setdefault("kitchen_missing", [])
 C.setdefault("kitchen_variant", 0)
+C.setdefault("liked_vegetables", [])
 
 st.markdown("""
 <style>
@@ -122,15 +123,61 @@ RECIPE_LIBRARY = [
         "tags": {"warm_gekuechelt", "mild", "suess"}, "ingredients": {"Buchweizen", "Apfel", "Mandelmus"},
     },
 ]
-HEAT_EXCLUSIONS = {
-    "Hafer", "Haferdrink", "Ingwer", "Zimt",
-    "stark wärmende Gewürze", "erhitzende Getränke"
+FOOD_MATRIX = {
+    # temperature = TCM-Grunddaten/Arbeitsdaten.
+    # practice_rules = Katharinas Begleitlogik, bewusst getrennt von der TCM-Temperatur.
+    "Buchweizen": {
+        "group": "Getreide", "temperature": "neutral",
+        "practice_rules": [],
+        "source_note": "Lebensmittelliste / fachlicher Abgleich",
+    },
+    "Hafer": {
+        "group": "Getreide", "temperature": "neutral",
+        "practice_rules": ["bei aktuellem Hitze-/Schwitzhinweis nicht priorisieren"],
+        "source_note": "TCM-Grundtemperatur neutral; Katharina-Praxisregel separat",
+    },
+    "Haferdrink": {
+        "group": "Getränk/Pflanzendrink", "temperature": "nicht automatisch vom Hafer ableiten",
+        "practice_rules": ["bei aktuellem Hitze-/Schwitzhinweis nicht priorisieren"],
+        "source_note": "Katharina-Praxisregel",
+    },
+    "Reis": {
+        "group": "Getreide", "temperature": "Arbeitsmatrix",
+        "practice_rules": [],
+        "source_note": "Unterlagen",
+    },
+    "Hirse": {
+        "group": "Getreide", "temperature": "Arbeitsmatrix",
+        "practice_rules": [],
+        "source_note": "Unterlagen",
+    },
+    "Polenta": {
+        "group": "Getreide", "temperature": "Arbeitsmatrix",
+        "practice_rules": [],
+        "source_note": "Unterlagen",
+    },
+    "Ingwer": {
+        "group": "Gewürz", "temperature": "thermisch relevant",
+        "practice_rules": ["bei aktuellem Hitze-/Schwitzhinweis nicht automatisch empfehlen"],
+        "source_note": "Katharina-Praxisregel / Unterlagen",
+    },
+    "Zimt": {
+        "group": "Gewürz", "temperature": "thermisch relevant",
+        "practice_rules": ["bei aktuellem Hitze-/Schwitzhinweis nicht automatisch empfehlen"],
+        "source_note": "Katharina-Praxisregel / Unterlagen",
+    },
 }
+
+def katharina_heat_blocked(ingredient):
+    data = FOOD_MATRIX.get(ingredient, {})
+    return "bei aktuellem Hitze-/Schwitzhinweis nicht priorisieren" in data.get("practice_rules", []) or            "bei aktuellem Hitze-/Schwitzhinweis nicht automatisch empfehlen" in data.get("practice_rules", [])
+
 
 def recipe_is_allowed(recipe, filters):
     if "HITZEFILTER" in filters:
-        if recipe["ingredients"] & HEAT_EXCLUSIONS:
-            return False
+        for ingredient in recipe["ingredients"]:
+            if katharina_heat_blocked(ingredient):
+                return False
     return True
 
 def choose_breakfast(day, prefer_simple=False, active_filters=None, preference=None):
@@ -163,7 +210,7 @@ KITCHEN_COMPONENTS = {
         {"name": "Reis", "ingredients": {"Reis"}, "tags": {"neutral", "mild"}},
         {"name": "Hirse", "ingredients": {"Hirse"}, "tags": {"warm", "mild"}},
         {"name": "Polenta", "ingredients": {"Polenta"}, "tags": {"mild"}},
-        {"name": "Buchweizen", "ingredients": {"Buchweizen"}, "tags": {"warm"}},
+        {"name": "Buchweizen", "ingredients": {"Buchweizen"}, "tags": {"neutral"}},
     ],
     "vegetables": [
         {"name": "Zucchini", "ingredients": {"Zucchini"}, "tags": {"mild"}},
@@ -198,8 +245,18 @@ def choose_component(group, filters, blocked, offset=0):
 def build_kitchen_idea(filters, variant=0, dislikes=None, missing=None, evening=False):
     blocked = set(dislikes or []) | set(missing or [])
     base = choose_component("bases", filters, blocked, variant)
-    veg1 = choose_component("vegetables", filters, blocked, variant)
-    veg2 = choose_component("vegetables", filters, blocked | ({veg1["name"]} if veg1 else set()), variant + 2)
+    # Katharina-Regel: sanft gegartes Gemüse wird primär nach Geschmack
+    # und individueller Verträglichkeit gewählt. Ein allgemeiner Hitzehinweis
+    # filtert hier nicht automatisch einzelne Gemüsesorten heraus.
+    vegetable_pool = KITCHEN_COMPONENTS["vegetables"]
+    liked = set(C.get("liked_vegetables", []))
+    if liked:
+        vegetable_pool = [v for v in vegetable_pool if v["name"] in liked]
+
+    allowed_veg = [v for v in vegetable_pool if v["name"] not in blocked]
+    veg1 = allowed_veg[variant % len(allowed_veg)] if allowed_veg else None
+    remaining_veg = [v for v in allowed_veg if not veg1 or v["name"] != veg1["name"]]
+    veg2 = remaining_veg[(variant + 1) % len(remaining_veg)] if remaining_veg else None
     extra = choose_component("extras", filters, blocked, variant)
 
     if evening:
@@ -234,7 +291,10 @@ def kitchen_card(idea, title="Katharinas Küchenbaukasten"):
     st.markdown("**So bereitest du das Gemüse zu:**")
     st.write("1. Gemüse klein schneiden und direkt in einen Topf mit gut schließendem Deckel geben.")
     st.write("2. Eine kleine Prise Himalayasalz dazugeben.")
-    st.write("3. Wenn es zur heutigen Richtung passt, ein paar Butterflocken ergänzen.")
+    if idea["extra"] == "ein paar Butterflocken":
+        st.write("3. Ein paar Butterflocken dazugeben.")
+    else:
+        st.write("3. Heute keine Butterflocken ergänzen.")
     st.write("4. Deckel schließen und bei mittlerer bis eher sanfter Hitze etwa 5–10 Minuten unter Beobachtung im eigenen Saft garen.")
     st.write("5. Den Deckel möglichst geschlossen lassen, damit Dampf und Feuchtigkeit im Topf bleiben.")
     st.write("6. Das Gemüse soll angenehm gegart, aber nicht zerkocht sein.")
@@ -257,7 +317,7 @@ def kitchen_card(idea, title="Katharinas Küchenbaukasten"):
 
 def katharina():
     st.title("Katharina-Dashboard 🪴")
-    st.caption("V9 – Katharinas Küchenbaukasten mit flexiblen Kombinationen. Keine echten Klientinnendaten.")
+    st.caption("V10 – Katharina-Lebensmittelmatrix: Grunddaten, Praxisregeln und Klientenfaktoren getrennt. Keine echten Klientinnendaten.")
 
     x,y,z = st.columns(3)
     x.metric("Tag", f"{C['day']}/14")
@@ -347,7 +407,14 @@ def katharina():
     if C.get("decision"):
         st.success(f"**Katharinas letzte Entscheidung:** {C['decision']}")
 
+    st.subheader("Katharina-Lebensmittelmatrix")
+    st.caption("TCM-Grunddaten, Katharina-Praxisregeln und persönliche Klientenfaktoren werden getrennt behandelt.")
+    st.write("**Buchweizen:** TCM-Grundtemperatur in der Arbeitsmatrix = neutral.")
+    st.write("**Hafer:** Grundtemperatur und Katharinas Praxisregel sind getrennt; bei aktuellem Hitze-/Schwitzhinweis wird Hafer in dieser Begleitlogik nicht priorisiert.")
+
     st.subheader("Küchenbaukasten – persönliche Filter")
+    if C.get("liked_vegetables"):
+        st.write("**Gemüse, das Maria gerne mag:** " + " · ".join(C["liked_vegetables"]))
     if C.get("kitchen_dislikes"):
         st.write("**Mag Maria derzeit nicht:** " + " · ".join(C["kitchen_dislikes"]))
     if C.get("kitchen_missing"):
@@ -499,6 +566,16 @@ def maria():
     st.divider()
     st.subheader("Deine warme Gemüseidee heute")
     st.write("Du kannst Gemüse im Dampfgarer zubereiten oder sanft im eigenen Saft garen.")
+    st.write("Beim sanft gegarten Gemüse steht hier zuerst im Vordergrund, was dir schmeckt und was du gut verträgst.")
+
+    all_veg_names = [v["name"] for v in KITCHEN_COMPONENTS["vegetables"]]
+    liked_veg = st.multiselect(
+        "Welches Gemüse magst du gerne?",
+        all_veg_names,
+        default=C.get("liked_vegetables", []),
+        key="liked_vegetables_selector"
+    )
+    C["liked_vegetables"] = liked_veg
 
     idea = build_kitchen_idea(
         filters=filters,
