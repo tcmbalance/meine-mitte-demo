@@ -2,267 +2,154 @@
 import streamlit as st
 from datetime import date
 
-st.set_page_config(
-    page_title="Meine Mitte – Prototyp",
-    page_icon="🌿",
-    layout="centered"
-)
+st.set_page_config(page_title="Meine Mitte V3", page_icon="🌿", layout="centered")
 
-# -----------------------------
-# Demo data – only fictional
-# -----------------------------
-CLIENT = {
-    "name": "Maria",
-    "day": 4,
-    "focus": "Feuchtigkeit",
-    "filters": ["Kälte", "Mitte stärken", "Qi-Fluss sanft bewegen"],
-    "breakfast": {
-        "title": "Warmes Hafer-Birnen-Frühstück",
-        "details": "Haferflocken trocken anrösten, mit Mandel- oder Haferdrink köcheln, Birne dazugeben und mild mit Zimt und Kardamom abrunden."
-    },
-    "impulses": {
-        "EFT": "Eine kurze Klopfrunde für 'Ich bin heute zu viel im Kopf'.",
-        "Körper abklopfen": "Den Körper sanft von oben nach unten und wieder zurück abklopfen. Locker bleiben, ruhig atmen.",
-        "Nieren reiben": "Hände warm reiben, den unteren Rücken sanft wärmen und dabei bei frischer Luft ruhig atmen."
+# DEMO ONLY: fictional local session data
+if "client" not in st.session_state:
+    st.session_state.client = {
+        "name": "Maria", "day": 1, "approved": False,
+        "focus": "Feuchtigkeit", "filters": ["Kälte", "Mitte stärken", "Stagnation beobachten"],
+        "history": [], "breakfast_status": None, "alerts": []
     }
-}
-
 if "view" not in st.session_state:
-    st.session_state.view = "maria"
-if "morning_done" not in st.session_state:
-    st.session_state.morning_done = False
-if "breakfast_feedback" not in st.session_state:
-    st.session_state.breakfast_feedback = None
-if "reaction_details" not in st.session_state:
-    st.session_state.reaction_details = []
-if "selected_impulse" not in st.session_state:
-    st.session_state.selected_impulse = None
-if "katharina_note" not in st.session_state:
-    st.session_state.katharina_note = ""
+    st.session_state.view = "katharina"
+
+C = st.session_state.client
 
 st.markdown("""
 <style>
-.block-container {max-width: 760px; padding-top: 2rem;}
-div[data-testid="stMetric"] {background: #f7f7f7; border-radius: 14px; padding: 12px;}
-.card {padding: 1.1rem; border: 1px solid #e7e7e7; border-radius: 16px; margin-bottom: 1rem;}
-.small {font-size: 0.9rem; opacity: 0.75;}
+.block-container{max-width:780px;padding-top:1.5rem}
+.card{border:1px solid #e2e6df;border-radius:18px;padding:18px;margin:12px 0;background:#fff}
+.small{opacity:.7;font-size:.9rem}
 </style>
 """, unsafe_allow_html=True)
 
-col1, col2 = st.columns(2)
-with col1:
-    if st.button("🌿 Maria-Ansicht", use_container_width=True):
-        st.session_state.view = "maria"
-with col2:
-    if st.button("🪴 Katharina-Ansicht", use_container_width=True):
-        st.session_state.view = "katharina"
+a,b = st.columns(2)
+with a:
+    if st.button("🪴 Katharina", use_container_width=True): st.session_state.view="katharina"; st.rerun()
+with b:
+    if st.button("🌿 Maria", use_container_width=True): st.session_state.view="maria"; st.rerun()
 
-st.divider()
+def card(title, body):
+    st.markdown(f'<div class="card"><h3>{title}</h3><p>{body}</p></div>', unsafe_allow_html=True)
 
-def maria_view():
-    st.title("Meine Mitte 🌿")
-    st.caption("Demo-Prototyp – fiktive Testperson, keine echten Gesundheitsdaten")
+def breakfast_for(day):
+    rotation = [
+        ("Warmes Hirse-Birnen-Frühstück", "Hirse weich kochen, Birne mitgaren und mild würzen."),
+        ("Pikantes Reisfrühstück mit Ei", "Warmen Reis mit gedünstetem Gemüse und Ei kombinieren."),
+        ("Hafer-Apfel-Frühstück", "Hafer gekocht mit Apfel; mild und warm servieren."),
+        ("Warmes Polenta-Frühstück", "Polenta weich kochen und passend süß oder pikant ergänzen.")
+    ]
+    return rotation[(day-1) % len(rotation)]
 
-    st.markdown(f"""
-    <div class="card">
-    <h3>Guten Morgen, {CLIENT['name']} 🌿</h3>
-    <p>Du bist heute an Tag <b>{CLIENT['day']} von 14</b>.</p>
-    <p>Wir bleiben heute ganz bei kleinen Schritten.</p>
-    </div>
-    """, unsafe_allow_html=True)
-
-    if not st.session_state.morning_done:
-        st.subheader("Dein kurzer Morgen-Check-in")
-        sleep = st.radio(
-            "Wie hast du geschlafen?",
-            ["Sehr gut 😊", "Ganz okay 🙂", "Eher unruhig 😕", "Schlecht 😴"],
-            index=None
-        )
-        feeling = st.radio(
-            "Wie fühlt sich dein Körper heute an?",
-            ["Eher kalt 🧊", "Neutral 🌿", "Eher warm 🔥", "Schwer / gestaut", "Leicht / beweglich"],
-            index=None
-        )
-        if st.button("Morgen-Check-in speichern", type="primary", disabled=not (sleep and feeling)):
-            st.session_state.morning_done = True
-            st.session_state.sleep = sleep
-            st.session_state.feeling = feeling
-            st.rerun()
-    else:
-        st.success("Danke, Maria. Für heute Morgen ist schon genug beobachtet. 🌿")
-        st.caption(f"Schlaf: {st.session_state.sleep} · Körpergefühl: {st.session_state.feeling}")
-
-    st.divider()
-    st.subheader("Dein Frühstück heute")
-    st.markdown(f"""
-    <div class="card">
-    <h3>{CLIENT['breakfast']['title']}</h3>
-    <p>{CLIENT['breakfast']['details']}</p>
-    <p class="small">Heute einfach in Ruhe essen. Du musst nichts perfekt machen.</p>
-    </div>
-    """, unsafe_allow_html=True)
-
-    st.write("Wie war das Frühstück für dich?")
-    c1, c2, c3 = st.columns(3)
-    with c1:
-        if st.button("😋 Hat geschmeckt", use_container_width=True):
-            st.session_state.breakfast_feedback = "geschmeckt"
-            st.rerun()
-    with c2:
-        if st.button("😐 Geschmacklich nicht meins", use_container_width=True):
-            st.session_state.breakfast_feedback = "geschmack"
-            st.rerun()
-    with c3:
-        if st.button("😕 Körperlich nicht gut bekommen", use_container_width=True):
-            st.session_state.breakfast_feedback = "koerper"
-            st.rerun()
-
-    if st.session_state.breakfast_feedback == "geschmeckt":
-        st.success("Schön 😊 Dann bleibt diese Variante vorerst in deiner persönlichen Frühstücksauswahl.")
-    elif st.session_state.breakfast_feedback == "geschmack":
-        st.info("Alles gut. Dann suchen wir eine andere passende Variante, die dir auch wirklich schmeckt.")
-        pref = st.radio(
-            "Was würde dich morgen mehr ansprechen?",
-            ["Süß und weich / breiig", "Pikant und mit etwas zum Kauen", "Überrasch mich mit einer passenden Alternative"],
-            index=None
-        )
-        if pref:
-            st.success(f"Notiert: {pref}. Morgen wird die Frühstücksidee entsprechend angepasst.")
-    elif st.session_state.breakfast_feedback == "koerper":
-        st.warning("Danke, dass du das sagst. Dann bleiben wir nicht stur bei diesem Frühstück.")
-        reactions = st.multiselect(
-            "Was ist dir aufgefallen?",
-            [
-                "Völlegefühl / Druck",
-                "Blähungen",
-                "Übelkeit",
-                "Deutlich weicherer Stuhl / Durchfall",
-                "Trockener oder schwieriger Stuhl",
-                "Stärkeres Kältegefühl",
-                "Hitzegefühl / starkes Schwitzen",
-                "Müdigkeit / Schwere",
-                "Schnell wieder hungrig",
-                "Starkes Süßverlangen",
-                "Etwas anderes"
-            ]
-        )
-        repeat = st.radio(
-            "War das heute zum ersten Mal oder ist dir das mit diesem Frühstück schon öfter aufgefallen?",
-            ["Zum ersten Mal", "Zum zweiten Mal", "Mehrmals"],
-            index=None
-        )
-        if reactions and repeat and st.button("Reaktion prüfen", type="primary"):
-            st.session_state.reaction_details = reactions
-            st.session_state.repeat = repeat
-            st.rerun()
-
-    if st.session_state.reaction_details:
-        repeated = st.session_state.repeat in ["Zum zweiten Mal", "Mehrmals"]
-        heat_cluster = any(x in st.session_state.reaction_details for x in ["Hitzegefühl / starkes Schwitzen", "Trockener oder schwieriger Stuhl"])
-        if repeated and heat_cluster:
-            st.error("Dein Verlauf hat sich möglicherweise verändert. Katharina bekommt einen Re-Check-Hinweis, bevor die Richtung angepasst wird.")
-        elif repeated:
-            st.info("Diese Frühstücksvariante wird pausiert. Für morgen wird eine leichtere passende Alternative aus Katharinas Rezeptwelt gewählt.")
-        else:
-            st.info("Wir beobachten das zunächst. Für morgen bekommst du trotzdem eine andere passende Variante, damit wir nicht stur weitermachen.")
-
-    st.divider()
-    st.subheader("Katharinas Impuls für heute")
-    impulse_choice = st.radio(
-        "Was würde sich heute eher gut anfühlen?",
-        ["EFT-Klopfen", "Körper abklopfen", "Nieren reiben & ruhig atmen", "Heute kein Impuls"],
-        index=None
-    )
-    if impulse_choice and impulse_choice != "Heute kein Impuls":
-        mapping = {
-            "EFT-Klopfen": "EFT",
-            "Körper abklopfen": "Körper abklopfen",
-            "Nieren reiben & ruhig atmen": "Nieren reiben"
-        }
-        key = mapping[impulse_choice]
-        st.session_state.selected_impulse = key
-        st.markdown(f"""
-        <div class="card">
-        <h4>{impulse_choice}</h4>
-        <p>{CLIENT['impulses'][key]}</p>
-        <p class="small">Kurz, sanft und ohne Leistungsdruck. Wenn es sich unangenehm anfühlt, hör auf.</p>
-        </div>
-        """, unsafe_allow_html=True)
-        effect = st.radio(
-            "Wie war der Impuls für dich?",
-            ["Etwas ruhiger", "Unverändert", "Unruhiger", "Unangenehm"],
-            index=None
-        )
-        if effect:
-            st.success(f"Notiert: {effect}. Das fließt in deine persönliche Begleitung ein.")
-    elif impulse_choice == "Heute kein Impuls":
-        st.info("Auch das ist völlig in Ordnung. Heute musst du nichts nachholen.")
-
-    st.divider()
-    st.caption("Automatisierte Demo-Nachrichten stammen vom digitalen Begleiter nach Katharinas Methode. Persönliche Nachrichten von Katharina würden gesondert gekennzeichnet.")
-
-def katharina_view():
+def katharina():
     st.title("Katharina-Dashboard 🪴")
-    st.caption("Demo-Prototyp – fiktive Testperson")
+    st.caption("V3 – 14-Tage-Demo mit fiktiver Maria. Keine echten Klientinnendaten.")
 
-    a, b, c = st.columns(3)
-    a.metric("Aktive Begleitungen", "1")
-    b.metric("Zur Prüfung", "0")
-    c.metric("Re-Check", "1" if st.session_state.reaction_details else "0")
+    x,y,z = st.columns(3)
+    x.metric("Tag", f"{C['day']}/14")
+    y.metric("Status", "freigegeben" if C["approved"] else "prüfen")
+    z.metric("Hinweise", len(C["alerts"]))
 
-    st.subheader("Maria · Tag 4 von 14")
-    st.markdown(f"""
-    <div class="card">
-    <b>Schwerpunkt:</b> {CLIENT['focus']}<br>
-    <b>Aktive Filter:</b> {", ".join(CLIENT['filters'])}<br>
-    <b>Aktuelles Frühstück:</b> {CLIENT['breakfast']['title']}
-    </div>
-    """, unsafe_allow_html=True)
+    card("Vorläufiges Kurzbild",
+         "Hinweise auf Feuchtigkeit stehen im Vordergrund. Kälte bleibt als Thermikfilter aktiv. "
+         "Die Mitte wird mitgestärkt. Anspannung und Stagnation werden nicht ausschließlich über Ernährung begleitet.")
 
-    if st.session_state.morning_done:
-        st.write("**Heute Morgen**")
-        st.write(f"- Schlaf: {st.session_state.sleep}")
-        st.write(f"- Körpergefühl: {st.session_state.feeling}")
+    st.subheader("Vorgeschlagene Richtung")
+    st.write("**14-Tage-Schwerpunkt:** Feuchtigkeit angehen")
+    st.write("**Aktive Filter:** " + " · ".join(C["filters"]))
+    st.write("**Begleitachsen:** Ernährung/Mitte hoch · Entspannung mittel · Bewegung/Qi-Fluss mittel")
 
-    if st.session_state.breakfast_feedback:
-        st.write("**Frühstücksfeedback**")
-        st.write(f"- Status: {st.session_state.breakfast_feedback}")
-    if st.session_state.reaction_details:
-        st.warning("Muster-/Rezeptprüfung empfohlen")
-        st.write("Gemeldete Reaktionen:")
-        for r in st.session_state.reaction_details:
-            st.write(f"- {r}")
-        st.write(f"- Wiederholung: {st.session_state.repeat}")
+    if not C["approved"]:
+        c1,c2,c3 = st.columns(3)
+        with c1:
+            if st.button("✅ Freigeben", use_container_width=True):
+                C["approved"] = True; st.rerun()
+        with c2:
+            if st.button("✏️ Ändern", use_container_width=True):
+                st.info("In der echten Version öffnet sich hier die fachliche Bearbeitung.")
+        with c3:
+            if st.button("❓ Rückfrage", use_container_width=True):
+                st.info("In der echten Version wird eine gezielte Rückfrage vorbereitet.")
+    else:
+        st.success("Begleitrichtung für die Demo freigegeben.")
 
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            if st.button("✅ Frühstück wechseln", use_container_width=True):
-                st.success("Demo: Frühstückswechsel freigegeben.")
-        with col2:
-            if st.button("🔎 Re-Check starten", use_container_width=True):
-                st.info("Demo: Gesamtbild wird neu geprüft.")
-        with col3:
-            if st.button("❓ Rückfrage senden", use_container_width=True):
-                st.info("Demo: Rückfrage an Maria vorbereitet.")
+    if C["alerts"]:
+        st.subheader("Katharina-Blick empfohlen")
+        for alert in C["alerts"]:
+            st.warning(alert)
 
-    st.subheader("Persönliche Nachricht an Maria")
-    note = st.text_area(
-        "Nachricht",
-        value=st.session_state.katharina_note,
-        placeholder="Liebe Maria, ich habe kurz über deinen Verlauf geschaut ..."
-    )
-    if st.button("Persönliche Nachricht vormerken", disabled=not note.strip()):
-        st.session_state.katharina_note = note.strip()
-        st.success("Demo: Nachricht als persönliche Katharina-Nachricht vorgemerkt.")
+    st.subheader("Verlauf")
+    if not C["history"]:
+        st.caption("Noch keine Tagesrückmeldungen.")
+    else:
+        for h in reversed(C["history"]):
+            st.markdown(f"**Tag {h['day']}** – Schlaf: {h['sleep']} · Körper: {h['body']} · Frühstück: {h['food']}")
+            if h.get("reaction"): st.write("Reaktion:", ", ".join(h["reaction"]))
+            st.divider()
 
-    st.subheader("Methoden-Testnotiz")
-    st.text_area(
-        "Was würdest du fachlich korrigieren?",
-        placeholder="Beispiel: Bei dieser Kombination würde ich stärker auf ... achten."
-    )
-    st.caption("In der späteren Entwicklungsphase werden solche Korrekturen als Methodenregeln dokumentiert.")
+def maria():
+    st.title(f"Guten Morgen, {C['name']} 🌿")
+    st.caption(f"Tag {C['day']} von 14 · fiktive Demo")
 
-if st.session_state.view == "maria":
-    maria_view()
-else:
-    katharina_view()
+    if not C["approved"]:
+        card("Katharina schaut noch kurz drüber",
+             "Deine erste Begleitrichtung ist noch nicht freigegeben. In der Demo kannst du in die Katharina-Ansicht wechseln.")
+        return
+
+    st.write("Heute reichen mir zwei kurze Antworten.")
+    sleep = st.radio("Wie war dein Schlaf?", ["erholsam", "eher okay", "unruhig", "schlecht"], index=None)
+    body = st.radio("Wie fühlt sich dein Körper heute an?", ["warm und angenehm", "eher kalt", "schwer / träge", "leicht", "innerlich gestaut / angespannt"], index=None)
+
+    title, desc = breakfast_for(C["day"])
+    card("Dein Frühstück heute", f"<b>{title}</b><br>{desc}<br><span class='small'>Nicht direkt kalt aus dem Kühlschrank. In Ruhe essen.</span>")
+
+    food = st.radio("Wie ist dir das Frühstück bekommen?",
+                    ["gut", "geschmacklich nicht meins", "körperlich nicht gut"], index=None)
+
+    reaction = []
+    if food == "körperlich nicht gut":
+        reaction = st.multiselect("Was ist dir aufgefallen?", [
+            "Völlegefühl / Druck", "Blähungen", "Übelkeit", "weicher Stuhl / Durchfall",
+            "trockener / schwieriger Stuhl", "stärkeres Kältegefühl",
+            "Hitzegefühl / starkes Schwitzen", "Müdigkeit / Schwere"
+        ])
+
+    st.subheader("Dein kleiner Impuls")
+    if body == "innerlich gestaut / angespannt":
+        st.info("Heute wäre eher ein kurzer Regulations- oder Bewegungsimpuls passend als noch ein weiterer Ernährungstipp.")
+        impulse = st.radio("Was fühlt sich gut an?", ["EFT – Video folgt später", "Körper abklopfen", "Sanft bewegen", "Heute nichts"], index=None)
+    elif body == "eher kalt":
+        st.info("Heute darf der Morgen sanft und angenehm warm beginnen.")
+        impulse = st.radio("Was fühlt sich gut an?", ["Nierenbereich reiben & ruhig atmen", "Körper abklopfen", "Heute nichts"], index=None)
+    else:
+        impulse = st.radio("Möchtest du heute einen kleinen Impuls?", ["Körper abklopfen", "Ruhig atmen", "Heute nichts"], index=None)
+
+    if st.button("Tag speichern", type="primary", disabled=not (sleep and body and food and impulse)):
+        entry = {"day": C["day"], "sleep": sleep, "body": body, "food": food, "reaction": reaction, "impulse": impulse}
+        C["history"].append(entry)
+
+        # Simplified demo re-check logic
+        if food == "körperlich nicht gut" and reaction:
+            C["breakfast_status"] = "pause"
+            heat = "Hitzegefühl / starkes Schwitzen" in reaction or "trockener / schwieriger Stuhl" in reaction
+            previous_bad = sum(1 for h in C["history"] if h["food"] == "körperlich nicht gut") >= 2
+            if heat and previous_bad:
+                C["alerts"].append(
+                    f"Tag {C['day']}: wiederholte ungünstige Frühstücksreaktion plus Hitzehinweis. "
+                    "Gesamtbild vor stärker wärmender Richtung neu prüfen."
+                )
+            elif previous_bad:
+                C["alerts"].append(
+                    f"Tag {C['day']}: wiederholte körperlich ungünstige Reaktion. Rezept pausieren und Rezept-/Muster-Recheck durchführen."
+                )
+
+        if C["day"] < 14: C["day"] += 1
+        st.success("Gespeichert 🌿 Morgen wird dein heutiger Verlauf mitberücksichtigt.")
+        st.rerun()
+
+def app():
+    if st.session_state.view == "katharina": katharina()
+    else: maria()
+
+app()
