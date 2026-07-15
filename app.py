@@ -2,19 +2,20 @@
 import streamlit as st
 from datetime import date
 
-st.set_page_config(page_title="Meine Mitte V7", page_icon="🌿", layout="centered")
+st.set_page_config(page_title="Meine Mitte V8", page_icon="🌿", layout="centered")
 
 # DEMO ONLY: fictional local session data
 if "client" not in st.session_state:
     st.session_state.client = {
         "name": "Maria", "day": 1, "approved": False,
         "focus": "Feuchtigkeit", "filters": ["Kälte", "Mitte stärken", "Stagnation beobachten"],
-        "history": [], "breakfast_status": None, "alerts": [], "open_review": None, "decision": None, "active_recipe_filters": []
+        "history": [], "breakfast_status": None, "alerts": [], "open_review": None, "decision": None, "active_recipe_filters": [], "breakfast_preference": "ausprobieren"
     }
 if "view" not in st.session_state:
     st.session_state.view = "katharina"
 
 C = st.session_state.client
+C.setdefault("breakfast_preference", "ausprobieren")
 
 st.markdown("""
 <style>
@@ -32,6 +33,20 @@ with b:
 
 def card(title, body):
     st.markdown(f'<div class="card"><h3>{title}</h3><p>{body}</p></div>', unsafe_allow_html=True)
+
+def recipe_card(recipe, intro=""):
+    st.markdown('<div class="card">', unsafe_allow_html=True)
+    st.subheader(recipe["name"])
+    if intro:
+        st.write(intro)
+    st.write(recipe["desc"])
+    st.markdown("**Du brauchst:**")
+    for item in recipe.get("ingredients_text", []):
+        st.write(f"• {item}")
+    st.markdown("**So geht's:**")
+    for i, step in enumerate(recipe.get("steps", []), start=1):
+        st.write(f"{i}. {step}")
+    st.markdown('</div>', unsafe_allow_html=True)
 
 def derive_recipe_filters():
     filters = []
@@ -55,43 +70,55 @@ def derive_recipe_filters():
 
 RECIPE_LIBRARY = [
     {
-        "name": "Warmes Hirse-Birnen-Frühstück",
-        "desc": "Hirse weich kochen, Birne mitgaren und mild halten.",
-        "tags": {"warm_gekuechelt", "mild", "suess"},
-        "ingredients": {"Hirse", "Birne"},
+        "name": "Cremiger Hirse-Birnen-Brei",
+        "desc": "Warm, weich und mit sanft gegarter Birne.",
+        "ingredients_text": ["45 g Hirse", "220–250 ml Wasser oder aktuell passender Pflanzendrink", "1 kleine Birne", "1 TL Mandelmus, wenn gut vertragen"],
+        "steps": ["Hirse heiß abspülen.", "Mit der Flüssigkeit aufkochen und etwa 15 Minuten weich garen.", "Birne klein schneiden und die letzten 5–7 Minuten mitgaren.", "Mandelmus bei Bedarf einrühren und in Ruhe essen."],
+        "tags": {"warm_gekuechelt", "mild", "suess"}, "ingredients": {"Hirse", "Birne", "Mandelmus"},
     },
     {
-        "name": "Pikantes Reisfrühstück mit Ei",
-        "desc": "Warmen Reis mit mild gedünstetem Gemüse und Ei kombinieren.",
-        "tags": {"warm_gekuechelt", "pikant"},
-        "ingredients": {"Reis", "Ei", "mildes Gemüse"},
+        "name": "Pikantes Reisfrühstück mit Ei und Zucchini",
+        "desc": "Warm, pikant und mit Kauanteil – auch mit vorgekochtem Reis praktisch.",
+        "ingredients_text": ["120–150 g gekochter Reis", "1 kleine Zucchini", "1 Ei", "1 TL Öl", "eine kleine Prise Salz"],
+        "steps": ["Zucchini klein schneiden und mit wenig Wasser sanft dünsten.", "Reis zugeben und vollständig erwärmen.", "Ei einrühren oder separat weich garen und dazugeben.", "Warm und ohne Eile essen."],
+        "tags": {"warm_gekuechelt", "pikant", "kauanteil"}, "ingredients": {"Reis", "Ei", "Zucchini"},
     },
     {
-        "name": "Hafer-Apfel-Frühstück",
-        "desc": "Hafer gekocht mit Apfel.",
-        "tags": {"warm_gekuechelt", "suess"},
-        "ingredients": {"Hafer", "Apfel"},
+        "name": "Warmer Hafer-Apfel-Brei",
+        "desc": "Ein einfaches warmes Getreidefrühstück für Tage, an denen Hafer aktuell in die Auswahl passt.",
+        "ingredients_text": ["45 g Haferflocken", "220 ml Wasser oder passender Pflanzendrink", "1 kleiner Apfel", "1 TL Nussmus, wenn gut vertragen"],
+        "steps": ["Haferflocken mit der Flüssigkeit etwa 5 Minuten weich kochen.", "Apfel klein schneiden und mitgaren.", "Nussmus am Ende einrühren.", "Warm und in Ruhe essen."],
+        "tags": {"warm_gekuechelt", "suess"}, "ingredients": {"Hafer", "Apfel", "Nussmus"},
     },
     {
-        "name": "Warmes Polenta-Frühstück",
-        "desc": "Polenta weich kochen und mild ergänzen.",
-        "tags": {"warm_gekuechelt", "mild"},
-        "ingredients": {"Polenta"},
+        "name": "Cremige Polenta mit Birnenkompott",
+        "desc": "Eine weiche süße Polenta-Variante mit warm gegarter Birne.",
+        "ingredients_text": ["45 g feine Polenta", "250 ml Wasser oder aktuell passender Pflanzendrink", "1 kleine Birne", "1 TL Mandelmus, wenn gut vertragen"],
+        "steps": ["Birne klein schneiden und mit 2–3 EL Wasser weich dünsten.", "Polenta nach Packungsangabe weich und cremig kochen.", "Birnenkompott daraufgeben.", "Bei Bedarf Mandelmus einrühren und langsam essen."],
+        "tags": {"warm_gekuechelt", "mild", "suess"}, "ingredients": {"Polenta", "Birne", "Mandelmus"},
     },
     {
         "name": "Mildes Reis-Congee mit Birne",
-        "desc": "Reis sehr weich und eher suppig kochen; eine kleine Menge Birne mitgaren.",
-        "tags": {"warm_gekuechelt", "mild", "suppig", "suess"},
-        "ingredients": {"Reis", "Birne"},
+        "desc": "Sehr weich und suppig – eine schlichte Variante, wenn der Bauch gerade Ruhe möchte.",
+        "ingredients_text": ["50 g Rundkornreis", "450–550 ml Wasser", "1/2 bis 1 kleine Birne"],
+        "steps": ["Reis mit Wasser aufkochen.", "Bei sehr kleiner Hitze 35–45 Minuten weich und suppig kochen; bei Bedarf Wasser ergänzen.", "Birne klein schneiden und gegen Ende mitgaren.", "Eine eher kleine Portion langsam essen und die Reaktion beobachten."],
+        "tags": {"warm_gekuechelt", "mild", "suppig", "suess"}, "ingredients": {"Reis", "Birne"},
     },
     {
         "name": "Mildes Reis-Gemüse-Congee",
-        "desc": "Reis sehr weich und suppig kochen und mit mildem gedünstetem Gemüse ergänzen.",
-        "tags": {"warm_gekuechelt", "mild", "suppig", "pikant"},
-        "ingredients": {"Reis", "mildes Gemüse"},
+        "desc": "Eine warme pikante, suppige Variante mit weich gegartem Gemüse.",
+        "ingredients_text": ["50 g Rundkornreis", "450–550 ml Wasser", "1 kleine Karotte", "ein kleines Stück Zucchini", "eine kleine Prise Salz"],
+        "steps": ["Reis mit Wasser aufkochen und bei kleiner Hitze weich und suppig garen.", "Karotte und Zucchini sehr klein schneiden.", "Gemüse die letzten 15 Minuten mitgaren.", "Mild abschmecken und warm essen."],
+        "tags": {"warm_gekuechelt", "mild", "suppig", "pikant"}, "ingredients": {"Reis", "Karotte", "Zucchini"},
+    },
+    {
+        "name": "Warme Buchweizen-Apfel-Schale",
+        "desc": "Eine weitere süße Getreidevariante für Abwechslung in der Rotation.",
+        "ingredients_text": ["45 g Buchweizenflocken", "220 ml Wasser oder aktuell passender Pflanzendrink", "1 kleiner Apfel", "1 TL Mandelmus, wenn gut vertragen"],
+        "steps": ["Buchweizenflocken mit der Flüssigkeit weich kochen.", "Apfel klein schneiden und mitgaren.", "Mandelmus am Ende einrühren.", "Warm und bewusst essen."],
+        "tags": {"warm_gekuechelt", "mild", "suess"}, "ingredients": {"Buchweizen", "Apfel", "Mandelmus"},
     },
 ]
-
 HEAT_EXCLUSIONS = {
     "Hafer", "Haferdrink", "Ingwer", "Zimt",
     "stark wärmende Gewürze", "erhitzende Getränke"
@@ -129,7 +156,7 @@ def choose_breakfast(day, prefer_simple=False, active_filters=None, preference=N
 
 def katharina():
     st.title("Katharina-Dashboard 🪴")
-    st.caption("V7 – Ausschlussfilter greifen vor der Rezeptauswahl. Keine echten Klientinnendaten.")
+    st.caption("V8 – klare Rezeptkarten, Frühstücksvorliebe und wärmere Klientinnensprache. Keine echten Klientinnendaten.")
 
     x,y,z = st.columns(3)
     x.metric("Tag", f"{C['day']}/14")
@@ -232,6 +259,20 @@ def maria():
     st.title(f"Guten Morgen, {C['name']} 🌿")
     st.caption(f"Tag {C['day']} von 14 · fiktive Demo")
 
+    st.markdown("**Wie magst du dein Frühstück grundsätzlich lieber?**")
+    pref_label = st.radio(
+        "Frühstücksvorliebe",
+        ["süß und weich/breiig", "pikant und mit Kauanteil", "beides", "ich möchte ausprobieren"],
+        index={"suess": 0, "pikant": 1, "beides": 2, "ausprobieren": 3}.get(C.get("breakfast_preference"), 3),
+        label_visibility="collapsed",
+    )
+    C["breakfast_preference"] = {
+        "süß und weich/breiig": "suess",
+        "pikant und mit Kauanteil": "pikant",
+        "beides": "beides",
+        "ich möchte ausprobieren": "ausprobieren",
+    }[pref_label]
+
     if not C["approved"]:
         card("Katharina schaut noch kurz drüber",
              "Deine erste Begleitrichtung ist noch nicht freigegeben. In der Demo kannst du in die Katharina-Ansicht wechseln.")
@@ -275,6 +316,7 @@ def maria():
                 C["day"],
                 prefer_simple=not large_fast,
                 active_filters=filters,
+                preference=C.get("breakfast_preference"),
             )
 
             # Zusätzliche Sicherung: Ein durch aktive Filter gesperrtes
@@ -288,14 +330,17 @@ def maria():
                 }
 
             if large_fast:
-                card("Dein angepasstes Frühstück heute",
-                     f"Wir wechseln nicht blind die ganze Richtung. Heute testen wir zuerst eine kleinere Portion und ruhigeres Essen.<br><br>"
-                     f"<b>{recipe['name']}</b><br>{recipe['desc']}<br>"
-                     f"<span class='small'>Kleinere Portion · langsam essen · kurze Pause bei angenehmer Sättigung.</span>")
+                recipe_card(
+                    recipe,
+                    "Heute darf dein Frühstück etwas ruhiger und leichter sein. "
+                    "Wir probieren eine kleinere Portion und geben deinem Körper beim Essen mehr Zeit."
+                )
+                st.caption("Kleinere Portion · langsam essen · kurze Pause bei angenehmer Sättigung.")
             else:
-                card("Dein angepasstes Frühstück heute",
-                     f"<b>{recipe['name']}</b><br>{recipe['desc']}<br>"
-                     f"<span class='small'>Die Zusammensetzung wurde nach den aktuellen Filtern vereinfacht.</span>")
+                recipe_card(
+                    recipe,
+                    "Heute probieren wir eine sanftere Frühstücksvariante und beobachten, wie sie dir bekommt."
+                )
 
             if "HITZEFILTER" in filters:
                 st.info("Der aktuelle Hitzehinweis wird heute zuerst berücksichtigt: Hafer und Haferdrink sowie automatisch stark wärmende Zutaten und Gewürze werden aus der heutigen Auswahl herausgefiltert.")
@@ -319,15 +364,15 @@ def maria():
             C["day"],
             prefer_simple=C.get("breakfast_status") == "pause",
             active_filters=filters,
+            preference=C.get("breakfast_preference"),
         )
-        title, desc = recipe["name"], recipe["desc"]
         if C.get("breakfast_status") == "pause":
-            card("Heute passen wir dein Frühstück an",
-                 f"Die Grundrichtung bleibt, aber die Auswahl wurde zuerst durch die aktuellen Filter geprüft.<br><br>"
-                 f"<b>{title}</b><br>{desc}")
+            recipe_card(
+                recipe,
+                "Heute bekommt dein Bauch eine sanftere Frühstücksvariante. Beobachte einfach, wie sie dir bekommt."
+            )
         else:
-            card("Dein Frühstück heute",
-                 f"<b>{title}</b><br>{desc}<br><span class='small'>Warm gekocht bedeutet nicht automatisch thermisch stark wärmend.</span>")
+            recipe_card(recipe, "Hier ist dein Frühstück für heute.")
         if "HITZEFILTER" in filters:
             st.info("Aktueller Hitzehinweis berücksichtigt: Hafer und Haferdrink sind heute nicht in der Auswahl.")
         food = st.radio("Wie ist dir das Frühstück bekommen?",
