@@ -2,7 +2,7 @@
 import streamlit as st
 from datetime import date
 
-st.set_page_config(page_title="Meine Mitte V8", page_icon="🌿", layout="centered")
+st.set_page_config(page_title="Meine Mitte V9", page_icon="🌿", layout="centered")
 
 # DEMO ONLY: fictional local session data
 if "client" not in st.session_state:
@@ -16,6 +16,9 @@ if "view" not in st.session_state:
 
 C = st.session_state.client
 C.setdefault("breakfast_preference", "ausprobieren")
+C.setdefault("kitchen_dislikes", [])
+C.setdefault("kitchen_missing", [])
+C.setdefault("kitchen_variant", 0)
 
 st.markdown("""
 <style>
@@ -154,9 +157,107 @@ def choose_breakfast(day, prefer_simple=False, active_filters=None, preference=N
 
     return allowed[(day - 1) % len(allowed)]
 
+
+KITCHEN_COMPONENTS = {
+    "bases": [
+        {"name": "Reis", "ingredients": {"Reis"}, "tags": {"neutral", "mild"}},
+        {"name": "Hirse", "ingredients": {"Hirse"}, "tags": {"warm", "mild"}},
+        {"name": "Polenta", "ingredients": {"Polenta"}, "tags": {"mild"}},
+        {"name": "Buchweizen", "ingredients": {"Buchweizen"}, "tags": {"warm"}},
+    ],
+    "vegetables": [
+        {"name": "Zucchini", "ingredients": {"Zucchini"}, "tags": {"mild"}},
+        {"name": "Karotte", "ingredients": {"Karotte"}, "tags": {"mild"}},
+        {"name": "Fenchel", "ingredients": {"Fenchel"}, "tags": {"aromatisch"}},
+        {"name": "Kürbis", "ingredients": {"Kürbis"}, "tags": {"mild"}},
+        {"name": "Kohlrabi", "ingredients": {"Kohlrabi"}, "tags": {"mild"}},
+    ],
+    "extras": [
+        {"name": "Ei", "ingredients": {"Ei"}, "tags": {"protein"}},
+        {"name": "ein paar Butterflocken", "ingredients": {"Butter"}, "tags": {"fett"}},
+        {"name": "ohne zusätzliche Ergänzung", "ingredients": set(), "tags": {"leicht"}},
+    ],
+}
+
+def component_allowed(component, filters):
+    ingredients = component["ingredients"]
+    if "HITZEFILTER" in filters:
+        if ingredients & {"Hafer", "Haferdrink", "Ingwer", "Zimt", "stark wärmende Gewürze", "erhitzende Getränke"}:
+            return False
+    return True
+
+def choose_component(group, filters, blocked, offset=0):
+    allowed = [
+        item for item in KITCHEN_COMPONENTS[group]
+        if component_allowed(item, filters) and item["name"] not in blocked
+    ]
+    if not allowed:
+        return None
+    return allowed[offset % len(allowed)]
+
+def build_kitchen_idea(filters, variant=0, dislikes=None, missing=None, evening=False):
+    blocked = set(dislikes or []) | set(missing or [])
+    base = choose_component("bases", filters, blocked, variant)
+    veg1 = choose_component("vegetables", filters, blocked, variant)
+    veg2 = choose_component("vegetables", filters, blocked | ({veg1["name"]} if veg1 else set()), variant + 2)
+    extra = choose_component("extras", filters, blocked, variant)
+
+    if evening:
+        # Katharina-Grundrichtung: abends leichter; Ei nicht automatisch priorisieren.
+        light = [x for x in KITCHEN_COMPONENTS["extras"] if x["name"] == "ohne zusätzliche Ergänzung"]
+        extra = light[0]
+
+    if not base or not veg1:
+        return None
+
+    veg_names = [veg1["name"]]
+    if veg2:
+        veg_names.append(veg2["name"])
+
+    return {
+        "base": base["name"],
+        "vegetables": veg_names,
+        "extra": extra["name"] if extra else "ohne zusätzliche Ergänzung",
+        "evening": evening,
+    }
+
+def kitchen_card(idea, title="Katharinas Küchenbaukasten"):
+    if not idea:
+        st.warning("Für die aktuellen Filter ist in dieser Demo noch keine passende Kombination hinterlegt.")
+        return
+
+    veg_text = " und ".join(idea["vegetables"])
+    st.markdown('<div class="card">', unsafe_allow_html=True)
+    st.subheader(title)
+    st.write(f"**Heute kombinieren wir:** {idea['base']} · {veg_text} · {idea['extra']}")
+
+    st.markdown("**So bereitest du das Gemüse zu:**")
+    st.write("1. Gemüse klein schneiden und direkt in einen Topf mit gut schließendem Deckel geben.")
+    st.write("2. Eine kleine Prise Himalayasalz dazugeben.")
+    st.write("3. Wenn es zur heutigen Richtung passt, ein paar Butterflocken ergänzen.")
+    st.write("4. Deckel schließen und bei mittlerer bis eher sanfter Hitze etwa 5–10 Minuten unter Beobachtung im eigenen Saft garen.")
+    st.write("5. Den Deckel möglichst geschlossen lassen, damit Dampf und Feuchtigkeit im Topf bleiben.")
+    st.write("6. Das Gemüse soll angenehm gegart, aber nicht zerkocht sein.")
+
+    st.markdown("**Dann kombinieren:**")
+    if idea["evening"]:
+        st.write(f"Das Gemüse mit einer kleinen Portion {idea['base']} kombinieren oder bei spätem Abendessen noch leichter halten.")
+    else:
+        st.write(f"Das Gemüse mit {idea['base']} kombinieren.")
+    if idea["extra"] == "Ei":
+        st.write("Das Ei zum Schluss untermengen oder separat weich garen und dazugeben.")
+    elif idea["extra"] == "ein paar Butterflocken":
+        st.write("Die Butterflocken beim Garen mit dem Gemüse verwenden.")
+    else:
+        st.write("Heute bleibt die Kombination bewusst schlicht und leicht.")
+
+    st.caption("Die konkrete Kombination wird erst nach den aktuell aktiven Filtern ausgewählt.")
+    st.markdown('</div>', unsafe_allow_html=True)
+
+
 def katharina():
     st.title("Katharina-Dashboard 🪴")
-    st.caption("V8 – klare Rezeptkarten, Frühstücksvorliebe und wärmere Klientinnensprache. Keine echten Klientinnendaten.")
+    st.caption("V9 – Katharinas Küchenbaukasten mit flexiblen Kombinationen. Keine echten Klientinnendaten.")
 
     x,y,z = st.columns(3)
     x.metric("Tag", f"{C['day']}/14")
@@ -245,6 +346,14 @@ def katharina():
 
     if C.get("decision"):
         st.success(f"**Katharinas letzte Entscheidung:** {C['decision']}")
+
+    st.subheader("Küchenbaukasten – persönliche Filter")
+    if C.get("kitchen_dislikes"):
+        st.write("**Mag Maria derzeit nicht:** " + " · ".join(C["kitchen_dislikes"]))
+    if C.get("kitchen_missing"):
+        st.write("**In der Demo als nicht vorhanden markiert:** " + " · ".join(C["kitchen_missing"]))
+    if not C.get("kitchen_dislikes") and not C.get("kitchen_missing"):
+        st.caption("Noch keine persönlichen Küchenfilter gemeldet.")
 
     st.subheader("Verlauf")
     if not C["history"]:
@@ -386,6 +495,53 @@ def maria():
             "stärkeres Kältegefühl", "Hitzegefühl / starkes Schwitzen",
             "Müdigkeit / Schwere", "Unruhe / Herzklopfen", "etwas anderes"
         ])
+
+    st.divider()
+    st.subheader("Deine warme Gemüseidee heute")
+    st.write("Du kannst Gemüse im Dampfgarer zubereiten oder sanft im eigenen Saft garen.")
+
+    idea = build_kitchen_idea(
+        filters=filters,
+        variant=C.get("kitchen_variant", 0),
+        dislikes=C.get("kitchen_dislikes", []),
+        missing=C.get("kitchen_missing", []),
+        evening=False,
+    )
+    kitchen_card(idea, "Gemüse im eigenen Saft – deine heutige Kombination")
+
+    kitchen_feedback = st.radio(
+        "Passt diese Kombination heute für dich?",
+        ["Ja, passt", "Das mag ich nicht", "Das habe ich nicht zu Hause", "Heute lieber eine andere Kombination"],
+        index=None,
+        key=f"kitchen_feedback_{C['day']}_{C.get('kitchen_variant', 0)}"
+    )
+
+    if kitchen_feedback == "Das mag ich nicht" and idea:
+        disliked = st.multiselect(
+            "Was davon magst du nicht?",
+            [idea["base"]] + idea["vegetables"] + [idea["extra"]],
+            key=f"dislike_{C['day']}_{C.get('kitchen_variant', 0)}"
+        )
+        if disliked and st.button("Andere passende Kombination suchen", key=f"dislike_btn_{C['day']}_{C.get('kitchen_variant', 0)}"):
+            C["kitchen_dislikes"] = sorted(set(C["kitchen_dislikes"]) | set(disliked))
+            C["kitchen_variant"] += 1
+            st.rerun()
+
+    elif kitchen_feedback == "Das habe ich nicht zu Hause" and idea:
+        missing = st.multiselect(
+            "Was fehlt dir?",
+            [idea["base"]] + idea["vegetables"] + [idea["extra"]],
+            key=f"missing_{C['day']}_{C.get('kitchen_variant', 0)}"
+        )
+        if missing and st.button("Mit vorhandenen Alternativen neu zusammenstellen", key=f"missing_btn_{C['day']}_{C.get('kitchen_variant', 0)}"):
+            C["kitchen_missing"] = sorted(set(C["kitchen_missing"]) | set(missing))
+            C["kitchen_variant"] += 1
+            st.rerun()
+
+    elif kitchen_feedback == "Heute lieber eine andere Kombination":
+        if st.button("Neue Kombination anzeigen", key=f"variant_btn_{C['day']}_{C.get('kitchen_variant', 0)}"):
+            C["kitchen_variant"] += 1
+            st.rerun()
 
     st.subheader("Dein kleiner Impuls")
     if body == "innerlich gestaut / angespannt":
