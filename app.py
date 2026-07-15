@@ -2,7 +2,7 @@
 import streamlit as st
 from datetime import date
 
-st.set_page_config(page_title="Meine Mitte V6", page_icon="🌿", layout="centered")
+st.set_page_config(page_title="Meine Mitte V7", page_icon="🌿", layout="centered")
 
 # DEMO ONLY: fictional local session data
 if "client" not in st.session_state:
@@ -103,24 +103,33 @@ def recipe_is_allowed(recipe, filters):
             return False
     return True
 
-def choose_breakfast(day, prefer_simple=False):
-    filters = derive_recipe_filters()
+def choose_breakfast(day, prefer_simple=False, active_filters=None, preference=None):
+    # V7: Ausschlussfilter greifen vor jeder weiteren Auswahl.
+    filters = list(active_filters) if active_filters is not None else derive_recipe_filters()
     allowed = [r for r in RECIPE_LIBRARY if recipe_is_allowed(r, filters)]
+
+    if preference in {"suess", "pikant"}:
+        preferred = [r for r in allowed if preference in r["tags"]]
+        if preferred:
+            allowed = preferred
+
     if prefer_simple:
         simple = [r for r in allowed if "mild" in r["tags"] and "suppig" in r["tags"]]
         if simple:
             allowed = simple
+
     if not allowed:
         return {
             "name": "Frühstück fachlich prüfen",
             "desc": "Für die aktiven Filter ist aktuell keine freigegebene Variante hinterlegt.",
             "tags": set(), "ingredients": set()
         }
+
     return allowed[(day - 1) % len(allowed)]
 
 def katharina():
     st.title("Katharina-Dashboard 🪴")
-    st.caption("V6 – erst aktuelle Filter prüfen, dann Frühstück auswählen. Keine echten Klientinnendaten.")
+    st.caption("V7 – Ausschlussfilter greifen vor der Rezeptauswahl. Keine echten Klientinnendaten.")
 
     x,y,z = st.columns(3)
     x.metric("Tag", f"{C['day']}/14")
@@ -257,7 +266,26 @@ def maria():
                 question_answers["amount"] == "eher groß"
                 and question_answers["pace"] == "eher schnell / nebenbei"
             )
-            recipe = choose_breakfast(C["day"], prefer_simple=not large_fast)
+            # V7-Reihenfolge:
+            # 1. Thermik-/Ausschlussfilter
+            # 2. erlaubte Rezeptauswahl
+            # 3. Verträglichkeit/Vereinfachung
+            # 4. Portions- und Essverhalten
+            recipe = choose_breakfast(
+                C["day"],
+                prefer_simple=not large_fast,
+                active_filters=filters,
+            )
+
+            # Zusätzliche Sicherung: Ein durch aktive Filter gesperrtes
+            # Rezept darf nicht angezeigt werden.
+            if not recipe_is_allowed(recipe, filters):
+                recipe = {
+                    "name": "Frühstück fachlich prüfen",
+                    "desc": "Die bisherige Variante passt nicht zu den aktuell aktiven Rezeptfiltern.",
+                    "tags": set(),
+                    "ingredients": set(),
+                }
 
             if large_fast:
                 card("Dein angepasstes Frühstück heute",
@@ -270,7 +298,7 @@ def maria():
                      f"<span class='small'>Die Zusammensetzung wurde nach den aktuellen Filtern vereinfacht.</span>")
 
             if "HITZEFILTER" in filters:
-                st.info("Heute werden Hafer/Haferdrink sowie automatisch stark wärmende Zutaten und Gewürze aus der Auswahl herausgefiltert.")
+                st.info("Der aktuelle Hitzehinweis wird heute zuerst berücksichtigt: Hafer und Haferdrink sowie automatisch stark wärmende Zutaten und Gewürze werden aus der heutigen Auswahl herausgefiltert.")
 
             food = st.radio("Wie ist dir das angepasste Frühstück bekommen?",
                             ["gut", "geschmacklich nicht meins", "körperlich nicht gut"], index=None)
@@ -287,7 +315,11 @@ def maria():
         reaction = []
 
     else:
-        recipe = choose_breakfast(C["day"], prefer_simple=C.get("breakfast_status") == "pause")
+        recipe = choose_breakfast(
+            C["day"],
+            prefer_simple=C.get("breakfast_status") == "pause",
+            active_filters=filters,
+        )
         title, desc = recipe["name"], recipe["desc"]
         if C.get("breakfast_status") == "pause":
             card("Heute passen wir dein Frühstück an",
