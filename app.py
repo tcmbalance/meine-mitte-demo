@@ -2,14 +2,14 @@
 import streamlit as st
 from datetime import date
 
-st.set_page_config(page_title="Meine Mitte V4", page_icon="🌿", layout="centered")
+st.set_page_config(page_title="Meine Mitte V5", page_icon="🌿", layout="centered")
 
 # DEMO ONLY: fictional local session data
 if "client" not in st.session_state:
     st.session_state.client = {
         "name": "Maria", "day": 1, "approved": False,
         "focus": "Feuchtigkeit", "filters": ["Kälte", "Mitte stärken", "Stagnation beobachten"],
-        "history": [], "breakfast_status": None, "alerts": []
+        "history": [], "breakfast_status": None, "alerts": [], "open_review": None, "decision": None
     }
 if "view" not in st.session_state:
     st.session_state.view = "katharina"
@@ -44,7 +44,7 @@ def breakfast_for(day):
 
 def katharina():
     st.title("Katharina-Dashboard 🪴")
-    st.caption("V4 – 14-Tage-Demo mit Verlaufsblick und automatischer Anpassung. Keine echten Klientinnendaten.")
+    st.caption("V5 – 14-Tage-Demo mit offenem Katharina-Blick und fachlicher Entscheidung. Keine echten Klientinnendaten.")
 
     x,y,z = st.columns(3)
     x.metric("Tag", f"{C['day']}/14")
@@ -100,10 +100,32 @@ def katharina():
         else:
             st.success("**Systemeinschätzung:** bisher kein Anlass für eine sofortige Richtungsänderung.")
 
-    if C["alerts"]:
-        st.subheader("Katharina-Blick empfohlen")
-        for alert in C["alerts"]:
-            st.warning(alert)
+    if C.get("open_review"):
+        st.subheader("🌿 Offener Katharina-Blick")
+        review = C["open_review"]
+        st.warning(
+            f"Seit Tag {review['since']}: Maria berichtet wiederholt über körperlich ungünstige Reaktionen. "
+            f"Aktuell genannt: {', '.join(review['reactions']) or 'keine Details'}."
+        )
+        st.markdown("""
+**Die bisherige Richtung wird nicht automatisch verworfen.**
+
+**Bitte mitdenken:** Menge und Esstempo · Zeitpunkt der Reaktion · Frühstück zu kompakt? · verwendetes Getreide und Zutaten · Stuhlentwicklung · Wärme-/Kälteempfinden.
+        """)
+        st.write("**Vorschlag:** Vor einer weiteren Rezeptrotation gezielt rückfragen und dann fachlich entscheiden.")
+        d1,d2,d3 = st.columns(3)
+        with d1:
+            if st.button("Richtung beibehalten", use_container_width=True):
+                C["decision"]="Richtung beibehalten"; C["open_review"]=None; C["breakfast_status"]="pause"; st.rerun()
+        with d2:
+            if st.button("Rezept anpassen", use_container_width=True):
+                C["decision"]="Rezept anpassen"; C["open_review"]=None; C["breakfast_status"]="question_first"; st.rerun()
+        with d3:
+            if st.button("Schwerpunkt neu prüfen", use_container_width=True):
+                C["decision"]="Schwerpunkt neu prüfen"; C["open_review"]=None; C["breakfast_status"]="hold"; st.rerun()
+
+    if C.get("decision"):
+        st.success(f"**Katharinas letzte Entscheidung:** {C['decision']}")
 
     st.subheader("Verlauf")
     if not C["history"]:
@@ -128,23 +150,41 @@ def maria():
     body = st.radio("Wie fühlt sich dein Körper heute an?", ["warm und angenehm", "eher kalt", "schwer / träge", "leicht", "innerlich gestaut / angespannt"], index=None)
 
     title, desc = breakfast_for(C["day"])
-    if C.get("breakfast_status") == "pause":
-        alternatives = [
-            ("Warmes Reis-Congee, mild", "Reis sehr weich kochen und heute bewusst schlicht halten."),
-            ("Pikantes Hirse-Gemüse-Frühstück", "Hirse warm mit mild gedünstetem Gemüse kombinieren."),
-            ("Warme Polenta, mild pikant", "Polenta weich kochen und mit mildem gedünstetem Gemüse ergänzen.")
-        ]
-        title, desc = alternatives[(C["day"]-2) % len(alternatives)]
-        card("Heute passen wir dein Frühstück an",
-             f"Gestern hat dein Körper deutlich reagiert. Deshalb wiederholen wir die Variante nicht.<br><br>"
-             f"<b>{title}</b><br>{desc}<br><span class='small'>Warm und gekocht bleibt die Richtung – die Zusammensetzung wechselt.</span>")
+    question_answers = {}
+    if C.get("breakfast_status") == "question_first":
+        card("Heute frage ich zuerst kurz nach",
+             "Katharina möchte nicht einfach die nächste Frühstücksvariante ausprobieren. Vier kurze Antworten helfen bei der Anpassung.")
+        question_answers["timing"] = st.radio("Wann beginnt Völlegefühl oder Druck meistens?",
+            ["direkt beim/kurz nach dem Essen", "30–90 Minuten später", "erst deutlich später", "unterschiedlich"], index=None)
+        question_answers["amount"] = st.radio("Wie war die Frühstücksmenge für dich?",
+            ["eher klein", "passend", "eher groß"], index=None)
+        question_answers["pace"] = st.radio("Wie hast du gegessen?",
+            ["ruhig und langsam", "normal", "eher schnell / nebenbei"], index=None)
+        question_answers["thermal"] = st.radio("Was ist dir thermisch aufgefallen?",
+            ["mehr Kälte", "angenehm warm", "mehr Hitze / Schwitzen", "nichts Besonderes"], index=None)
+        st.info("Heute wird kein neues Rezept blind freigegeben. Die Antworten gehen zuerst in Katharinas Verlauf.")
+        food = "Rückfragetag"
+        reaction = []
+    elif C.get("breakfast_status") == "hold":
+        card("Heute keine neue Frühstücksempfehlung",
+             "Katharina prüft den Schwerpunkt neu. Die Begleitung wird hier fachlich neu freigegeben.")
+        food = "Schwerpunktprüfung"
+        reaction = []
     else:
-        card("Dein Frühstück heute", f"<b>{title}</b><br>{desc}<br><span class='small'>Nicht direkt kalt aus dem Kühlschrank. In Ruhe essen.</span>")
-
-    food = st.radio("Wie ist dir das Frühstück bekommen?",
-                    ["gut", "geschmacklich nicht meins", "körperlich nicht gut"], index=None)
-
-    reaction = []
+        if C.get("breakfast_status") == "pause":
+            alternatives = [
+                ("Warmes Reis-Congee, mild", "Reis sehr weich kochen und heute bewusst schlicht halten."),
+                ("Pikantes Hirse-Gemüse-Frühstück", "Hirse warm mit mild gedünstetem Gemüse kombinieren."),
+                ("Warme Polenta, mild pikant", "Polenta weich kochen und mit mildem gedünstetem Gemüse ergänzen.")
+            ]
+            title, desc = alternatives[(C["day"]-2) % len(alternatives)]
+            card("Heute passen wir dein Frühstück an",
+                 f"Die Richtung bleibt, die Zusammensetzung wechselt.<br><br><b>{title}</b><br>{desc}")
+        else:
+            card("Dein Frühstück heute", f"<b>{title}</b><br>{desc}<br><span class='small'>Nicht direkt kalt aus dem Kühlschrank. In Ruhe essen.</span>")
+        food = st.radio("Wie ist dir das Frühstück bekommen?",
+                        ["gut", "geschmacklich nicht meins", "körperlich nicht gut"], index=None)
+        reaction = []
     if food == "körperlich nicht gut":
         reaction = st.multiselect("Was ist dir aufgefallen?", [
             "Völlegefühl / Druck", "Blähungen", "Übelkeit", "weicher Stuhl / Durchfall",
@@ -162,8 +202,9 @@ def maria():
     else:
         impulse = st.radio("Möchtest du heute einen kleinen Impuls?", ["Körper abklopfen", "Ruhig atmen", "Heute nichts"], index=None)
 
-    if st.button("Tag speichern", type="primary", disabled=not (sleep and body and food and impulse)):
-        entry = {"day": C["day"], "sleep": sleep, "body": body, "food": food, "reaction": reaction, "impulse": impulse}
+    ready_questions = C.get("breakfast_status") != "question_first" or all(question_answers.values())
+    if st.button("Tag speichern", type="primary", disabled=not (sleep and body and food and impulse and ready_questions)):
+        entry = {"day": C["day"], "sleep": sleep, "body": body, "food": food, "reaction": reaction, "impulse": impulse, "questions": question_answers}
         C["history"].append(entry)
 
         # Simplified demo re-check logic
@@ -174,15 +215,17 @@ def maria():
             C["breakfast_status"] = "pause"
             heat = "Hitzegefühl / starkes Schwitzen" in reaction or "trockener / schwieriger Stuhl" in reaction
             previous_bad = sum(1 for h in C["history"] if h["food"] == "körperlich nicht gut") >= 2
-            if heat and previous_bad:
-                C["alerts"].append(
-                    f"Tag {C['day']}: wiederholte ungünstige Frühstücksreaktion plus Hitzehinweis. "
-                    "Gesamtbild vor stärker wärmender Richtung neu prüfen."
-                )
-            elif previous_bad:
-                C["alerts"].append(
-                    f"Tag {C['day']}: wiederholte körperlich ungünstige Reaktion. Rezept pausieren und Rezept-/Muster-Recheck durchführen."
-                )
+            if previous_bad and not C.get("open_review"):
+                all_reactions = []
+                for h in C["history"]:
+                    all_reactions.extend(h.get("reaction", []))
+                C["open_review"] = {"since": C["day"], "reactions": sorted(set(all_reactions)), "heat": heat}
+                C["breakfast_status"] = "hold"
+
+        if food == "Rückfragetag":
+            C["open_review"] = {"since": C["day"], "reactions": ["gezielte Rückfragen beantwortet"],
+                                "heat": question_answers.get("thermal") == "mehr Hitze / Schwitzen"}
+            C["breakfast_status"] = "hold"
 
         if C["day"] < 14: C["day"] += 1
         st.success("Gespeichert 🌿 Morgen wird dein heutiger Verlauf mitberücksichtigt.")
