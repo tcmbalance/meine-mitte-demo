@@ -1,501 +1,429 @@
 
 import streamlit as st
-from datetime import date
+from datetime import datetime
 
-st.set_page_config(page_title="Meine Mitte V14", page_icon="🌿", layout="centered")
+st.set_page_config(
+    page_title="Meine Mitte 1.0",
+    page_icon="🌿",
+    layout="centered",
+)
 
-# DEMO ONLY: fictional local session data
+# ------------------------------------------------------------
+# Meine Mitte 1.0 – saubere Neuprogrammierung als MVP-Demo
+# Nur für fiktive Testdaten. Keine echte Gesundheitsdatenbank.
+# ------------------------------------------------------------
+
+DEFAULT_CLIENT = {
+    "name": "",
+    "day": 1,
+    "onboarding_complete": False,
+    "approved": False,
+    "approved_direction": "",
+    "approval_note": "",
+    "anamnesis": {},
+    "assessment": {},
+    "morning": {},
+    "evening": {},
+    "history": [],
+    "preferences": {
+        "breakfast": "ausprobieren",
+        "vegetables": [],
+        "dislikes": [],
+    },
+}
+
 if "client" not in st.session_state:
-    st.session_state.client = {
-        "name": "Maria", "day": 1, "approved": False,
-        "focus": "Feuchtigkeit", "filters": ["Kälte", "Mitte stärken", "Stagnation beobachten"],
-        "history": [], "breakfast_status": None, "alerts": [], "open_review": None, "decision": None, "active_recipe_filters": [], "breakfast_preference": "ausprobieren"
-    }
+    st.session_state.client = DEFAULT_CLIENT.copy()
+
 if "view" not in st.session_state:
-    st.session_state.view = "katharina"
+    st.session_state.view = "client"
 
 C = st.session_state.client
-C.setdefault("breakfast_preference", "ausprobieren")
-C.setdefault("kitchen_dislikes", [])
-C.setdefault("kitchen_missing", [])
-C.setdefault("kitchen_variant", 0)
-C.setdefault("liked_vegetables", [])
-C.setdefault("onboarding_complete", False)
-C.setdefault("anamnesis", {})
-C.setdefault("provisional_assessment", {})
-C.setdefault("approved_direction", None)
-C.setdefault("approval_note", "")
-C.setdefault("morning_visit_answers", {})
+
+# Ensure nested dictionaries survive future upgrades.
+C.setdefault("preferences", {})
+C["preferences"].setdefault("breakfast", "ausprobieren")
+C["preferences"].setdefault("vegetables", [])
+C["preferences"].setdefault("dislikes", [])
+C.setdefault("morning", {})
+C.setdefault("evening", {})
+C.setdefault("history", [])
+
+st.markdown(
+    """
+    <style>
+      .block-container {max-width: 820px; padding-top: 1.4rem; padding-bottom: 3rem;}
+      .mm-card {
+        border: 1px solid #dfe6df;
+        border-radius: 18px;
+        padding: 18px;
+        margin: 12px 0;
+        background: white;
+      }
+      .mm-soft {
+        background: #eef5ee;
+        border-radius: 16px;
+        padding: 16px;
+        margin: 12px 0;
+      }
+      .mm-small {opacity: .72; font-size: .9rem;}
+      .mm-title {font-size: 1.15rem; font-weight: 700; margin-bottom: .35rem;}
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 
 
-
-st.markdown("""
-<style>
-.block-container{max-width:780px;padding-top:1.5rem}
-.card{border:1px solid #e2e6df;border-radius:18px;padding:18px;margin:12px 0;background:#fff}
-.small{opacity:.7;font-size:.9rem}
-</style>
-""", unsafe_allow_html=True)
-
-a,b = st.columns(2)
-client_nav_name = C.get("name", "Klientin").strip() or "Klientin"
-with a:
-    if st.button("🪴 Katharina", use_container_width=True): st.session_state.view="katharina"; st.rerun()
-with b:
-    if st.button(f"🌿 {client_nav_name}", use_container_width=True): st.session_state.view="maria"; st.rerun()
-
-def card(title, body):
-    st.markdown(f'<div class="card"><h3>{title}</h3><p>{body}</p></div>', unsafe_allow_html=True)
-
-def recipe_card(recipe, intro=""):
-    st.markdown('<div class="card">', unsafe_allow_html=True)
-    st.subheader(recipe["name"])
-    if intro:
-        st.write(intro)
-    st.write(recipe["desc"])
-    st.markdown("**Du brauchst:**")
-    for item in recipe.get("ingredients_text", []):
-        st.write(f"• {item}")
-    st.markdown("**So geht's:**")
-    for i, step in enumerate(recipe.get("steps", []), start=1):
-        st.write(f"{i}. {step}")
-    st.markdown('</div>', unsafe_allow_html=True)
-
-def derive_recipe_filters():
-    filters = []
-    recent = C["history"][-3:]
-    heat_signals = 0
-    for h in recent:
-        if "Hitzegefühl / starkes Schwitzen" in h.get("reaction", []):
-            heat_signals += 1
-        if h.get("questions", {}).get("thermal") == "mehr Hitze / Schwitzen":
-            heat_signals += 1
-        if h.get("body") == "warm und angenehm":
-            pass
-
-    # Katharina-Regel: ein aktueller konkreter Hitze-/Schwitzhinweis
-    # aktiviert vorläufig den Rezeptfilter, ohne daraus allein ein fixes TCM-Muster abzuleiten.
-    if heat_signals >= 1:
-        filters.append("HITZEFILTER")
-
-    C["active_recipe_filters"] = filters
-    return filters
-
-RECIPE_LIBRARY = [
-    {
-        "name": "Cremiger Hirse-Birnen-Brei",
-        "desc": "Warm, weich und mit sanft gegarter Birne.",
-        "ingredients_text": ["45 g Hirse", "220–250 ml Wasser oder aktuell passender Pflanzendrink", "1 kleine Birne", "1 TL Mandelmus, wenn gut vertragen"],
-        "steps": ["Hirse heiß abspülen.", "Mit der Flüssigkeit aufkochen und etwa 15 Minuten weich garen.", "Birne klein schneiden und die letzten 5–7 Minuten mitgaren.", "Mandelmus bei Bedarf einrühren und in Ruhe essen."],
-        "tags": {"warm_gekuechelt", "mild", "suess"}, "ingredients": {"Hirse", "Birne", "Mandelmus"},
-    },
-    {
-        "name": "Pikantes Reisfrühstück mit Ei und Zucchini",
-        "desc": "Warm, pikant und mit Kauanteil – auch mit vorgekochtem Reis praktisch.",
-        "ingredients_text": ["120–150 g gekochter Reis", "1 kleine Zucchini", "1 Ei", "1 TL Öl", "eine kleine Prise Salz"],
-        "steps": ["Zucchini klein schneiden und mit wenig Wasser sanft dünsten.", "Reis zugeben und vollständig erwärmen.", "Ei einrühren oder separat weich garen und dazugeben.", "Warm und ohne Eile essen."],
-        "tags": {"warm_gekuechelt", "pikant", "kauanteil"}, "ingredients": {"Reis", "Ei", "Zucchini"},
-    },
-    {
-        "name": "Warmer Hafer-Apfel-Brei",
-        "desc": "Ein einfaches warmes Getreidefrühstück für Tage, an denen Hafer aktuell in die Auswahl passt.",
-        "ingredients_text": ["45 g Haferflocken", "220 ml Wasser oder passender Pflanzendrink", "1 kleiner Apfel", "1 TL Nussmus, wenn gut vertragen"],
-        "steps": ["Haferflocken mit der Flüssigkeit etwa 5 Minuten weich kochen.", "Apfel klein schneiden und mitgaren.", "Nussmus am Ende einrühren.", "Warm und in Ruhe essen."],
-        "tags": {"warm_gekuechelt", "suess"}, "ingredients": {"Hafer", "Apfel", "Nussmus"},
-    },
-    {
-        "name": "Cremige Polenta mit Birnenkompott",
-        "desc": "Eine weiche süße Polenta-Variante mit warm gegarter Birne.",
-        "ingredients_text": ["45 g feine Polenta", "250 ml Wasser oder aktuell passender Pflanzendrink", "1 kleine Birne", "1 TL Mandelmus, wenn gut vertragen"],
-        "steps": ["Birne klein schneiden und mit 2–3 EL Wasser weich dünsten.", "Polenta nach Packungsangabe weich und cremig kochen.", "Birnenkompott daraufgeben.", "Bei Bedarf Mandelmus einrühren und langsam essen."],
-        "tags": {"warm_gekuechelt", "mild", "suess"}, "ingredients": {"Polenta", "Birne", "Mandelmus"},
-    },
-    {
-        "name": "Mildes Reis-Congee mit Birne",
-        "desc": "Sehr weich und suppig – eine schlichte Variante, wenn der Bauch gerade Ruhe möchte.",
-        "ingredients_text": ["50 g Rundkornreis", "450–550 ml Wasser", "1/2 bis 1 kleine Birne"],
-        "steps": ["Reis mit Wasser aufkochen.", "Bei sehr kleiner Hitze 35–45 Minuten weich und suppig kochen; bei Bedarf Wasser ergänzen.", "Birne klein schneiden und gegen Ende mitgaren.", "Eine eher kleine Portion langsam essen und die Reaktion beobachten."],
-        "tags": {"warm_gekuechelt", "mild", "suppig", "suess"}, "ingredients": {"Reis", "Birne"},
-    },
-    {
-        "name": "Mildes Reis-Gemüse-Congee",
-        "desc": "Eine warme pikante, suppige Variante mit weich gegartem Gemüse.",
-        "ingredients_text": ["50 g Rundkornreis", "450–550 ml Wasser", "1 kleine Karotte", "ein kleines Stück Zucchini", "eine kleine Prise Salz"],
-        "steps": ["Reis mit Wasser aufkochen und bei kleiner Hitze weich und suppig garen.", "Karotte und Zucchini sehr klein schneiden.", "Gemüse die letzten 15 Minuten mitgaren.", "Mild abschmecken und warm essen."],
-        "tags": {"warm_gekuechelt", "mild", "suppig", "pikant"}, "ingredients": {"Reis", "Karotte", "Zucchini"},
-    },
-    {
-        "name": "Warme Buchweizen-Apfel-Schale",
-        "desc": "Eine weitere süße Getreidevariante für Abwechslung in der Rotation.",
-        "ingredients_text": ["45 g Buchweizenflocken", "220 ml Wasser oder aktuell passender Pflanzendrink", "1 kleiner Apfel", "1 TL Mandelmus, wenn gut vertragen"],
-        "steps": ["Buchweizenflocken mit der Flüssigkeit weich kochen.", "Apfel klein schneiden und mitgaren.", "Mandelmus am Ende einrühren.", "Warm und bewusst essen."],
-        "tags": {"warm_gekuechelt", "mild", "suess"}, "ingredients": {"Buchweizen", "Apfel", "Mandelmus"},
-    },
-]
-FOOD_MATRIX = {
-    # temperature = TCM-Grunddaten/Arbeitsdaten.
-    # practice_rules = Katharinas Begleitlogik, bewusst getrennt von der TCM-Temperatur.
-    "Buchweizen": {
-        "group": "Getreide", "temperature": "neutral",
-        "practice_rules": [],
-        "source_note": "Lebensmittelliste / fachlicher Abgleich",
-    },
-    "Hafer": {
-        "group": "Getreide", "temperature": "neutral",
-        "practice_rules": ["bei aktuellem Hitze-/Schwitzhinweis nicht priorisieren"],
-        "source_note": "TCM-Grundtemperatur neutral; Katharina-Praxisregel separat",
-    },
-    "Haferdrink": {
-        "group": "Getränk/Pflanzendrink", "temperature": "nicht automatisch vom Hafer ableiten",
-        "practice_rules": ["bei aktuellem Hitze-/Schwitzhinweis nicht priorisieren"],
-        "source_note": "Katharina-Praxisregel",
-    },
-    "Reis": {
-        "group": "Getreide", "temperature": "Arbeitsmatrix",
-        "practice_rules": [],
-        "source_note": "Unterlagen",
-    },
-    "Hirse": {
-        "group": "Getreide", "temperature": "Arbeitsmatrix",
-        "practice_rules": [],
-        "source_note": "Unterlagen",
-    },
-    "Polenta": {
-        "group": "Getreide", "temperature": "Arbeitsmatrix",
-        "practice_rules": [],
-        "source_note": "Unterlagen",
-    },
-    "Ingwer": {
-        "group": "Gewürz", "temperature": "thermisch relevant",
-        "practice_rules": ["bei aktuellem Hitze-/Schwitzhinweis nicht automatisch empfehlen"],
-        "source_note": "Katharina-Praxisregel / Unterlagen",
-    },
-    "Zimt": {
-        "group": "Gewürz", "temperature": "thermisch relevant",
-        "practice_rules": ["bei aktuellem Hitze-/Schwitzhinweis nicht automatisch empfehlen"],
-        "source_note": "Katharina-Praxisregel / Unterlagen",
-    },
-}
-
-def katharina_heat_blocked(ingredient):
-    data = FOOD_MATRIX.get(ingredient, {})
-    return "bei aktuellem Hitze-/Schwitzhinweis nicht priorisieren" in data.get("practice_rules", []) or            "bei aktuellem Hitze-/Schwitzhinweis nicht automatisch empfehlen" in data.get("practice_rules", [])
+def reset_demo():
+    st.session_state.client = DEFAULT_CLIENT.copy()
+    st.session_state.view = "client"
+    st.rerun()
 
 
-def recipe_is_allowed(recipe, filters):
-    if "HITZEFILTER" in filters:
-        for ingredient in recipe["ingredients"]:
-            if katharina_heat_blocked(ingredient):
-                return False
-    return True
-
-def choose_breakfast(day, prefer_simple=False, active_filters=None, preference=None):
-    # V7: Ausschlussfilter greifen vor jeder weiteren Auswahl.
-    filters = list(active_filters) if active_filters is not None else derive_recipe_filters()
-    allowed = [r for r in RECIPE_LIBRARY if recipe_is_allowed(r, filters)]
-
-    if preference in {"suess", "pikant"}:
-        preferred = [r for r in allowed if preference in r["tags"]]
-        if preferred:
-            allowed = preferred
-
-    if prefer_simple:
-        simple = [r for r in allowed if "mild" in r["tags"] and "suppig" in r["tags"]]
-        if simple:
-            allowed = simple
-
-    if not allowed:
-        return {
-            "name": "Frühstück fachlich prüfen",
-            "desc": "Für die aktiven Filter ist aktuell keine freigegebene Variante hinterlegt.",
-            "tags": set(), "ingredients": set()
-        }
-
-    return allowed[(day - 1) % len(allowed)]
+def client_name():
+    return (C.get("name") or "Klientin").strip()
 
 
-KITCHEN_COMPONENTS = {
-    "bases": [
-        {"name": "Reis", "ingredients": {"Reis"}, "tags": {"neutral", "mild"}},
-        {"name": "Hirse", "ingredients": {"Hirse"}, "tags": {"warm", "mild"}},
-        {"name": "Polenta", "ingredients": {"Polenta"}, "tags": {"mild"}},
-        {"name": "Buchweizen", "ingredients": {"Buchweizen"}, "tags": {"neutral"}},
-    ],
-    "vegetables": [
-        {"name": name, "ingredients": {name}, "tags": {"gemuese"}}
-        for name in [
-            "Artischocke", "Aubergine", "Bambussprossen", "Batate / Süßkartoffel",
-            "Blumenkohl", "Brokkoli", "Brunnenkresse", "Chicorée", "Chinakohl",
-            "Endivie", "Erbsen", "Fenchel", "Fisolen / grüne Bohnen", "Frühlingszwiebel",
-            "Gurke", "Karotte / Möhre", "Kartoffel", "Knollensellerie", "Kohlrabi",
-            "Kopfsalat", "Kresse", "Kürbis", "Lauch / Porree", "Mangold", "Okra",
-            "Pak Choi", "Paprika", "Pastinake", "Petersilienwurzel", "Radicchio",
-            "Radieschen", "Rettich", "Romanesco", "Rosenkohl", "Rote Bete / Rote Rübe",
-            "Rotkohl / Rotkraut", "Rucola", "Schwarzwurzel", "Selleriestange / Stangensellerie",
-            "Spargel grün", "Spargel weiß", "Spinat", "Spitzkohl", "Staudensellerie",
-            "Steckrübe", "Tomate", "Topinambur", "Weißkohl / Weißkraut", "Wirsing",
-            "Zucchini", "Zuckererbsen", "Zuckermais", "Zwiebel"
-        ]
-    ],
-    "extras": [
-        {"name": "Ei", "ingredients": {"Ei"}, "tags": {"protein"}},
-        {"name": "ein paar Butterflocken", "ingredients": {"Butter"}, "tags": {"fett"}},
-        {"name": "ohne zusätzliche Ergänzung", "ingredients": set(), "tags": {"leicht"}},
-    ],
-}
-
-def component_allowed(component, filters):
-    ingredients = component["ingredients"]
-    if "HITZEFILTER" in filters:
-        if ingredients & {"Hafer", "Haferdrink", "Ingwer", "Zimt", "stark wärmende Gewürze", "erhitzende Getränke"}:
-            return False
-    return True
-
-def choose_component(group, filters, blocked, offset=0):
-    allowed = [
-        item for item in KITCHEN_COMPONENTS[group]
-        if component_allowed(item, filters) and item["name"] not in blocked
-    ]
-    if not allowed:
-        return None
-    return allowed[offset % len(allowed)]
-
-def build_kitchen_idea(filters, variant=0, dislikes=None, missing=None, evening=False):
-    blocked = set(dislikes or []) | set(missing or [])
-    base = choose_component("bases", filters, blocked, variant)
-    # Katharina-Regel: sanft gegartes Gemüse wird primär nach Geschmack
-    # und individueller Verträglichkeit gewählt. Ein allgemeiner Hitzehinweis
-    # filtert hier nicht automatisch einzelne Gemüsesorten heraus.
-    vegetable_pool = KITCHEN_COMPONENTS["vegetables"]
-    liked = set(C.get("liked_vegetables", []))
-    if liked:
-        vegetable_pool = [v for v in vegetable_pool if v["name"] in liked]
-
-    allowed_veg = [v for v in vegetable_pool if v["name"] not in blocked]
-    veg1 = allowed_veg[variant % len(allowed_veg)] if allowed_veg else None
-    remaining_veg = [v for v in allowed_veg if not veg1 or v["name"] != veg1["name"]]
-    veg2 = remaining_veg[(variant + 1) % len(remaining_veg)] if remaining_veg else None
-    extra = choose_component("extras", filters, blocked, variant)
-
-    if evening:
-        # Katharina-Grundrichtung: abends leichter; Ei nicht automatisch priorisieren.
-        light = [x for x in KITCHEN_COMPONENTS["extras"] if x["name"] == "ohne zusätzliche Ergänzung"]
-        extra = light[0]
-
-    if not base or not veg1:
-        return None
-
-    veg_names = [veg1["name"]]
-    if veg2:
-        veg_names.append(veg2["name"])
-
-    return {
-        "base": base["name"],
-        "vegetables": veg_names,
-        "extra": extra["name"] if extra else "ohne zusätzliche Ergänzung",
-        "evening": evening,
-    }
-
-def kitchen_card(idea, title="Katharinas Küchenbaukasten"):
-    if not idea:
-        st.warning("Für die aktuellen Filter ist in dieser Demo noch keine passende Kombination hinterlegt.")
-        return
-
-    veg_text = " und ".join(idea["vegetables"])
-    st.markdown('<div class="card">', unsafe_allow_html=True)
-    st.subheader(title)
-    st.write(f"**Heute kombinieren wir:** {idea['base']} · {veg_text} · {idea['extra']}")
-
-    st.markdown("**So bereitest du das Gemüse zu:**")
-    st.write("1. Gemüse klein schneiden und direkt in einen Topf mit gut schließendem Deckel geben.")
-    st.write("2. Eine kleine Prise Himalayasalz dazugeben.")
-    if idea["extra"] == "ein paar Butterflocken":
-        st.write("3. Ein paar Butterflocken dazugeben.")
-    else:
-        st.write("3. Heute keine Butterflocken ergänzen.")
-    st.write("4. Deckel schließen und bei mittlerer bis eher sanfter Hitze etwa 5–10 Minuten unter Beobachtung im eigenen Saft garen.")
-    st.write("5. Den Deckel möglichst geschlossen lassen, damit Dampf und Feuchtigkeit im Topf bleiben.")
-    st.write("6. Das Gemüse soll angenehm gegart, aber nicht zerkocht sein.")
-
-    st.markdown("**Dann kombinieren:**")
-    if idea["evening"]:
-        st.write(f"Das Gemüse mit einer kleinen Portion {idea['base']} kombinieren oder bei spätem Abendessen noch leichter halten.")
-    else:
-        st.write(f"Das Gemüse mit {idea['base']} kombinieren.")
-    if idea["extra"] == "Ei":
-        st.write("Das Ei zum Schluss untermengen oder separat weich garen und dazugeben.")
-    elif idea["extra"] == "ein paar Butterflocken":
-        st.write("Die Butterflocken beim Garen mit dem Gemüse verwenden.")
-    else:
-        st.write("Heute bleibt die Kombination bewusst schlicht und leicht.")
-
-    st.caption("Die konkrete Kombination wird erst nach den aktuell aktiven Filtern ausgewählt.")
-    st.markdown('</div>', unsafe_allow_html=True)
+def render_navigation():
+    left, right = st.columns(2)
+    with left:
+        if st.button("🪴 Katharina", use_container_width=True):
+            st.session_state.view = "katharina"
+            st.rerun()
+    with right:
+        if st.button(f"🌿 {client_name()}", use_container_width=True):
+            st.session_state.view = "client"
+            st.rerun()
 
 
+def add_score(scores, reasons, key, value, reason):
+    scores[key] += value
+    reasons[key].append(reason)
 
-def score_anamnesis(a):
+
+def assess_anamnesis(a):
     scores = {
         "Feuchtigkeit": 0,
+        "Mitte stärken": 0,
         "Hitzehinweise": 0,
         "Kältehinweise": 0,
-        "Mitte stärken": 0,
         "Stagnationshinweise": 0,
     }
-    reasons = {k: [] for k in scores}
-
-    def add(key, points, reason):
-        scores[key] += points
-        reasons[key].append(reason)
+    reasons = {key: [] for key in scores}
 
     for item in a.get("digestion", []):
         if item in {"Völlegefühl / Druck", "Blähungen", "Schwere nach dem Essen"}:
-            add("Feuchtigkeit", 2, item)
-            add("Mitte stärken", 2, item)
-        if item in {"weicher Stuhl / Durchfall", "unverdautes im Stuhl"}:
-            add("Mitte stärken", 2, item)
-            add("Feuchtigkeit", 1, item)
+            add_score(scores, reasons, "Feuchtigkeit", 2, item)
+            add_score(scores, reasons, "Mitte stärken", 2, item)
+        if item in {"weicher Stuhl / Durchfall", "unverdaute Nahrungsbestandteile"}:
+            add_score(scores, reasons, "Mitte stärken", 2, item)
+            add_score(scores, reasons, "Feuchtigkeit", 1, item)
         if item == "trockener / schwieriger Stuhl":
-            add("Hitzehinweise", 1, item)
+            add_score(scores, reasons, "Hitzehinweise", 1, item)
 
     for item in a.get("body", []):
-        if item in {"Schwere / Trägheit", "geschwollene Hände / Beine", "viel Schleim"}:
-            add("Feuchtigkeit", 2, item)
+        if item in {"Schwere / Trägheit", "Wassereinlagerungen", "viel Schleim"}:
+            add_score(scores, reasons, "Feuchtigkeit", 2, item)
         if item in {"Hitzegefühl", "starkes Schwitzen", "innere Unruhe mit Wärme"}:
-            add("Hitzehinweise", 2, item)
+            add_score(scores, reasons, "Hitzehinweise", 2, item)
         if item in {"kalte Hände / Füße", "Frieren", "Wärme tut gut"}:
-            add("Kältehinweise", 2, item)
-            add("Mitte stärken", 1, item)
+            add_score(scores, reasons, "Kältehinweise", 2, item)
+            add_score(scores, reasons, "Mitte stärken", 1, item)
 
     for item in a.get("food_habits", []):
-        if item in {"viel Brot / Gebäck", "viel Käse", "häufig Joghurt / kalte Milchprodukte", "häufig Süßigkeiten"}:
-            add("Feuchtigkeit", 2, item)
-            add("Mitte stärken", 1, item)
+        if item in {
+            "viel Brot / Gebäck",
+            "viel Käse",
+            "häufig Joghurt / kalte Milchprodukte",
+            "häufig Süßigkeiten",
+        }:
+            add_score(scores, reasons, "Feuchtigkeit", 2, item)
+            add_score(scores, reasons, "Mitte stärken", 1, item)
         if item in {"viel Rohkost", "häufig kalte Speisen / Getränke"}:
-            add("Kältehinweise", 1, item)
-            add("Mitte stärken", 1, item)
+            add_score(scores, reasons, "Kältehinweise", 1, item)
+            add_score(scores, reasons, "Mitte stärken", 1, item)
 
-    for item in a.get("stagnation", []):
-        if item in {"häufig angespannt", "Gefühl von innerem Stau", "seufze oft", "Bewegung tut mir gut", "gereizt / schnell genervt"}:
-            add("Stagnationshinweise", 2, item)
+    if a.get("thermal") == "eher kalt / friere leicht":
+        add_score(scores, reasons, "Kältehinweise", 3, "thermisches Empfinden")
+    elif a.get("thermal") == "eher heiß / viel Schwitzen":
+        add_score(scores, reasons, "Hitzehinweise", 3, "thermisches Empfinden")
 
-    if a.get("sleep") in {"unruhig", "häufiges Erwachen"}:
-        add("Stagnationshinweise", 1, f"Schlaf: {a.get('sleep')}")
+    if a.get("sleep") in {"unruhig", "häufiges Erwachen", "Gedankenkreisen / lange Einschlafzeit"}:
+        add_score(scores, reasons, "Stagnationshinweise", 1, f"Schlaf: {a.get('sleep')}")
+
     if a.get("energy") in {"müde / schwer", "Einbruch nach dem Essen"}:
-        add("Mitte stärken", 2, f"Energie: {a.get('energy')}")
-        add("Feuchtigkeit", 1, f"Energie: {a.get('energy')}")
-    if a.get("thermal") == "eher heiß / viel Schwitzen":
-        add("Hitzehinweise", 3, "thermisches Empfinden")
-    elif a.get("thermal") == "eher kalt / friere leicht":
-        add("Kältehinweise", 3, "thermisches Empfinden")
+        add_score(scores, reasons, "Mitte stärken", 2, f"Energie: {a.get('energy')}")
+        add_score(scores, reasons, "Feuchtigkeit", 1, f"Energie: {a.get('energy')}")
 
-    ranked = sorted(scores.items(), key=lambda x: x[1], reverse=True)
+    for item in a.get("emotions", []):
+        if item in {"viel Wut / Ärger", "gereizt", "innerlich angespannt", "emotional wechselhaft"}:
+            add_score(scores, reasons, "Stagnationshinweise", 1, f"emotionaler Hinweis: {item}")
+        if item in {"grübelnd / viele Gedanken", "erschöpft", "antriebslos"}:
+            add_score(scores, reasons, "Mitte stärken", 1, f"emotionaler Hinweis: {item}")
+
+    ranked = sorted(scores.items(), key=lambda pair: pair[1], reverse=True)
+
+    current_heat_signals = [
+        item for item in a.get("body", [])
+        if item in {"Hitzegefühl", "starkes Schwitzen", "innere Unruhe mit Wärme"}
+    ]
+    if a.get("thermal") == "eher heiß / viel Schwitzen":
+        current_heat_signals.append("überwiegend heiß / viel Schwitzen")
+
+    relevant_heat = bool(current_heat_signals) and scores["Hitzehinweise"] >= 3
+    underlying = next(
+        (name for name, value in ranked if name != "Hitzehinweise" and value > 0),
+        None,
+    )
+
     contradictions = []
     if scores["Hitzehinweise"] >= 2 and scores["Kältehinweise"] >= 2:
-        contradictions.append("Es zeigen sich gleichzeitig Hitze- und Kältehinweise. Thermik nicht vereinfachen; Verlauf und Kontext prüfen.")
+        contradictions.append(
+            "Hitze- und Kältehinweise treten gemeinsam auf. Thermik nicht vereinfachen."
+        )
     if scores["Feuchtigkeit"] >= 4 and scores["Stagnationshinweise"] >= 3:
-        contradictions.append("Feuchtigkeits- und Stagnationshinweise treten gemeinsam auf. Ernährung nicht als einzigen Begleitbaustein behandeln.")
+        contradictions.append(
+            "Feuchtigkeit und Stagnationshinweise treten gemeinsam auf. Ernährung nicht als einzigen Begleitbaustein behandeln."
+        )
 
     return {
         "scores": scores,
         "reasons": reasons,
         "ranked": ranked,
+        "relevant_heat": relevant_heat,
+        "heat_signals": current_heat_signals,
+        "underlying": underlying,
         "contradictions": contradictions,
     }
 
-def client_anamnesis():
-    st.title("Willkommen bei Meine Mitte 🌿")
-    st.write(
-        "Bevor deine Begleitung startet, möchte ich ein erstes Bild von deinem Alltag und deinem Körpergefühl bekommen. "
-        "Es geht nicht darum, etwas perfekt zu beantworten."
+
+VEGETABLES = [
+    "Artischocke", "Aubergine", "Bambussprossen", "Batate / Süßkartoffel",
+    "Blumenkohl", "Brokkoli", "Chicorée", "Chinakohl", "Erbsen", "Fenchel",
+    "Fisolen / grüne Bohnen", "Gurke", "Karotte / Möhre", "Kartoffel",
+    "Knollensellerie", "Kohlrabi", "Kürbis", "Lauch / Porree", "Mangold",
+    "Pak Choi", "Paprika", "Pastinake", "Petersilienwurzel", "Radicchio",
+    "Radieschen", "Rettich", "Romanesco", "Rosenkohl", "Rote Bete / Rote Rübe",
+    "Rotkohl / Rotkraut", "Rucola", "Schwarzwurzel", "Spargel grün",
+    "Spargel weiß", "Spinat", "Spitzkohl", "Steckrübe", "Tomate",
+    "Topinambur", "Weißkohl / Weißkraut", "Wirsing", "Zucchini",
+    "Zuckererbsen", "Zuckermais", "Zwiebel",
+]
+
+
+BREAKFASTS = {
+    "suess": [
+        {
+            "name": "Mildes Reis-Congee mit Birne",
+            "ingredients": ["50 g Rundkornreis", "450–550 ml Wasser", "½–1 kleine Birne"],
+            "steps": [
+                "Reis mit Wasser aufkochen.",
+                "Bei kleiner Hitze 35–45 Minuten weich und suppig kochen.",
+                "Birne gegen Ende klein geschnitten mitgaren.",
+                "Eine eher kleine Portion langsam essen.",
+            ],
+        },
+        {
+            "name": "Cremige Polenta mit Birnenkompott",
+            "ingredients": ["45 g feine Polenta", "250 ml Wasser", "1 kleine Birne"],
+            "steps": [
+                "Birne klein schneiden und mit wenig Wasser weich dünsten.",
+                "Polenta cremig kochen.",
+                "Birnenkompott dazugeben.",
+                "Langsam und in Ruhe essen.",
+            ],
+        },
+        {
+            "name": "Cremiger Hirse-Birnen-Brei",
+            "ingredients": ["45 g Hirse", "220–250 ml Wasser", "1 kleine Birne"],
+            "steps": [
+                "Hirse heiß abspülen.",
+                "Mit Wasser weich garen.",
+                "Birne die letzten Minuten mitgaren.",
+                "In Ruhe essen und Sättigung beobachten.",
+            ],
+        },
+    ],
+    "pikant": [
+        {
+            "name": "Mildes Reis-Gemüse-Congee",
+            "ingredients": ["50 g Rundkornreis", "450–550 ml Wasser", "mildes Gemüse nach Geschmack"],
+            "steps": [
+                "Reis weich und suppig kochen.",
+                "Gemüse klein schneiden.",
+                "Gemüse gegen Ende sanft mitgaren.",
+                "Mild abschmecken und warm essen.",
+            ],
+        },
+        {
+            "name": "Pikantes Reisfrühstück mit Ei und Gemüse",
+            "ingredients": ["120–150 g gekochter Reis", "Gemüse nach Geschmack", "1 Ei"],
+            "steps": [
+                "Gemüse im Dampfgarer oder im eigenen Saft garen.",
+                "Reis vollständig erwärmen.",
+                "Ei untermengen oder separat weich garen.",
+                "Warm und ohne Eile essen.",
+            ],
+        },
+    ],
+}
+
+
+def select_breakfast():
+    pref = C["preferences"].get("breakfast", "ausprobieren")
+    assessment = C.get("assessment", {})
+
+    # Katharina-Praxisregel: bei aktuellem relevanten Hitze-/Schwitzhinweis
+    # Hafer nicht priorisieren. Diese MVP-Auswahl enthält bewusst keinen Hafer.
+    if pref == "pikant":
+        pool = BREAKFASTS["pikant"]
+    elif pref == "suess":
+        pool = BREAKFASTS["suess"]
+    elif pref == "beides":
+        pool = BREAKFASTS["suess"] + BREAKFASTS["pikant"]
+    else:
+        pool = BREAKFASTS["suess"] + BREAKFASTS["pikant"]
+
+    return pool[(C["day"] - 1) % len(pool)]
+
+
+def render_recipe(recipe, intro):
+    st.markdown('<div class="mm-card">', unsafe_allow_html=True)
+    st.subheader(recipe["name"])
+    st.write(intro)
+    st.markdown("**Du brauchst:**")
+    for item in recipe["ingredients"]:
+        st.write(f"• {item}")
+    st.markdown("**So geht's:**")
+    for index, step in enumerate(recipe["steps"], start=1):
+        st.write(f"{index}. {step}")
+    st.markdown("</div>", unsafe_allow_html=True)
+
+
+def render_welcome():
+    st.title("🌿 Meine Mitte")
+    st.markdown(
+        """
+        <div class="mm-card">
+          <div class="mm-title">Herzlich willkommen.</div>
+          <p>In den nächsten 14 Tagen begleite ich dich Schritt für Schritt.</p>
+          <p>Wir betrachten Körper, Geist und Seele als zusammengehörig. Schlaf, Verdauung,
+          Energie, Gefühle, Bewegung und Ernährung sind Puzzleteile deines persönlichen Gesamtbildes.</p>
+          <p>Es geht nicht darum, perfekt zu sein. Es geht darum, deinen Körper besser zu verstehen
+          und ihm wieder Energie zu geben.</p>
+          <p><strong>Deine Katharina</strong> 🌿</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
     )
-    st.caption("V14 ist eine Demo. Bitte hier noch keine echten Gesundheitsdaten von Klientinnen eingeben.")
 
-    with st.form("anamnesis_form"):
-        name = st.text_input("Wie darf ich dich ansprechen?", value=C.get("name", "Maria"))
+    if st.button("Begleitung starten", type="primary", use_container_width=True):
+        C["started"] = True
+        st.rerun()
 
-        breakfast_pref = st.radio(
-            "Wie magst du dein Frühstück grundsätzlich lieber?",
-            ["süß und weich/breiig", "pikant und mit Kauanteil", "beides", "ich möchte ausprobieren"],
+
+def render_anamnesis():
+    st.title("Deine Erstanamnese 🌿")
+    st.write(
+        "Jede Antwort ist ein kleines Puzzleteil. Gemeinsam helfen sie uns, dein persönliches Gesamtbild besser zu verstehen."
+    )
+    st.caption("MVP-Demo: Bitte noch keine echten Gesundheitsdaten eingeben.")
+
+    with st.form("anamnesis"):
+        name = st.text_input("Wie darf ich dich ansprechen?")
+
+        concerns = st.multiselect(
+            "Was hat dich zu Meine Mitte geführt?",
+            [
+                "Verdauungsbeschwerden", "schlechter Schlaf", "Müdigkeit / Erschöpfung",
+                "wenig Energie", "Hautthemen", "Kinderwunsch", "Wechseljahre",
+                "Gewicht verändern / abnehmen", "Blähungen / Völlegefühl",
+                "häufiges Frieren", "Hitze / starkes Schwitzen", "Stress / Überforderung",
+                "Allergien / Unverträglichkeiten", "etwas anderes",
+            ],
+        )
+
+        digestion = st.multiselect(
+            "Was kennst du von deiner Verdauung?",
+            [
+                "Völlegefühl / Druck", "Blähungen", "Schwere nach dem Essen",
+                "weicher Stuhl / Durchfall", "unverdaute Nahrungsbestandteile",
+                "trockener / schwieriger Stuhl", "nichts davon",
+            ],
+        )
+
+        body = st.multiselect(
+            "Was fällt dir körperlich häufiger auf?",
+            [
+                "Schwere / Trägheit", "Wassereinlagerungen", "viel Schleim",
+                "Hitzegefühl", "starkes Schwitzen", "innere Unruhe mit Wärme",
+                "kalte Hände / Füße", "Frieren", "Wärme tut gut", "nichts davon",
+            ],
+        )
+
+        thermal = st.radio(
+            "Wie erlebst du dich thermisch meistens?",
+            ["eher kalt / friere leicht", "ausgeglichen", "eher heiß / viel Schwitzen", "wechselt stark"],
             index=None,
         )
 
-        digestion = st.multiselect("Was kennst du von deiner Verdauung?", [
-            "Völlegefühl / Druck", "Blähungen", "Schwere nach dem Essen",
-            "weicher Stuhl / Durchfall", "unverdautes im Stuhl",
-            "trockener / schwieriger Stuhl", "nichts davon"
-        ])
-
-        body = st.multiselect("Was fällt dir körperlich häufiger auf?", [
-            "Schwere / Trägheit", "geschwollene Hände / Beine", "viel Schleim",
-            "Hitzegefühl", "starkes Schwitzen", "innere Unruhe mit Wärme",
-            "kalte Hände / Füße", "Frieren", "Wärme tut gut", "nichts davon"
-        ])
-
-        food_habits = st.multiselect("Was gehört derzeit häufig zu deinem Alltag?", [
-            "viel Brot / Gebäck", "viel Käse", "häufig Joghurt / kalte Milchprodukte",
-            "häufig Süßigkeiten", "viel Rohkost", "häufig kalte Speisen / Getränke",
-            "überwiegend warm und gekocht"
-        ])
-
-        thermal = st.radio("Wie erlebst du dich thermisch meistens?", [
-            "eher kalt / friere leicht", "ausgeglichen", "eher heiß / viel Schwitzen", "wechselt stark"
-        ], index=None)
-
-        sleep = st.radio("Wie ist dein Schlaf meistens?", [
-            "ruhig", "unruhig", "häufiges Erwachen", "sehr unterschiedlich"
-        ], index=None)
-
-        energy = st.radio("Wie ist deine Energie im Alltag?", [
-            "stabil", "müde / schwer", "Einbruch nach dem Essen", "unruhig / schwer abzuschalten", "wechselhaft"
-        ], index=None)
-
-        stagnation = st.multiselect("Was beschreibt dich im Moment?", [
-            "häufig angespannt", "Gefühl von innerem Stau", "seufze oft",
-            "Bewegung tut mir gut", "gereizt / schnell genervt", "nichts davon"
-        ])
-
-        liked_veg = st.multiselect(
-            "Welches Gemüse magst du gerne?",
-            [v["name"] for v in KITCHEN_COMPONENTS["vegetables"]],
-            help="Mehrfachauswahl möglich. Die Auswahl dient vor allem Geschmack und Alltagstauglichkeit."
+        sleep = st.radio(
+            "Wie ist dein Schlaf meistens?",
+            [
+                "ruhig", "Gedankenkreisen / lange Einschlafzeit", "unruhig",
+                "häufiges Erwachen", "sehr unterschiedlich",
+            ],
+            index=None,
         )
-        other_veg = st.text_input(
-            "Dein Gemüse ist nicht dabei?",
-            placeholder="Weitere Gemüsesorten mit Komma trennen"
+
+        energy = st.radio(
+            "Wie ist deine Energie im Alltag?",
+            ["stabil", "müde / schwer", "Einbruch nach dem Essen", "unruhig / schwer abzuschalten", "wechselhaft"],
+            index=None,
+        )
+
+        food_habits = st.multiselect(
+            "Was gehört derzeit häufig zu deinem Essalltag?",
+            [
+                "ich frühstücke nicht", "viel Brot / Gebäck", "viel Käse",
+                "häufig Joghurt / kalte Milchprodukte", "häufig Süßigkeiten",
+                "viel Rohkost", "häufig kalte Speisen / Getränke",
+                "überwiegend warm und gekocht",
+            ],
+        )
+
+        breakfast_label = st.radio(
+            "Wie magst du dein Frühstück?",
+            ["süß und weich/breiig", "pikant und mit Kauanteil", "beides", "ich möchte ausprobieren"],
+            index=None,
         )
 
         emotions = st.multiselect(
             "Wie geht es dir emotional im Moment?",
             [
-                "ausgeglichen",
-                "ängstlich",
-                "unsicher",
+                "ausgeglichen", "ängstlich", "unsicher",
                 "wenig Selbstvertrauen / wenig Selbstbewusstsein",
-                "Panikgefühle",
-                "depressive Verstimmung / niedergeschlagen",
-                "viel Wut / Ärger",
-                "gereizt",
-                "innerlich angespannt",
-                "grübelnd / viele Gedanken",
-                "traurig",
-                "überfordert",
-                "erschöpft",
-                "antriebslos",
-                "emotional wechselhaft",
+                "Panikgefühle", "depressive Verstimmung / niedergeschlagen",
+                "viel Wut / Ärger", "gereizt", "innerlich angespannt",
+                "grübelnd / viele Gedanken", "traurig", "überfordert",
+                "erschöpft", "antriebslos", "emotional wechselhaft",
                 "Rückzug / möchte eher allein sein",
             ],
-            help="Mehrfachauswahl möglich. Die Angaben sind Hinweise für Katharinas Gesamtblick und keine psychische Diagnose."
         )
 
-        free_note = st.text_area("Gibt es noch etwas, das Katharina wissen sollte?")
+        vegetables = st.multiselect("Welches Gemüse magst du gerne?", VEGETABLES)
+        more_vegetables = st.text_input(
+            "Dein Gemüse ist nicht dabei?",
+            placeholder="Weitere Sorten mit Komma trennen",
+        )
+
+        free_note = st.text_area("Gibt es etwas, das Katharina noch wissen sollte?")
 
         submitted = st.form_submit_button("Anamnese abschließen", type="primary")
 
     if submitted:
-        required = all([name, breakfast_pref, thermal, sleep, energy])
-        if not required:
-            st.error("Bitte beantworte noch die Grundfragen zu Frühstück, Thermik, Schlaf und Energie.")
+        if not all([name.strip(), thermal, sleep, energy, breakfast_label]):
+            st.error("Bitte beantworte noch Name, Thermik, Schlaf, Energie und Frühstücksvorliebe.")
             return
 
         pref_map = {
@@ -504,540 +432,344 @@ def client_anamnesis():
             "beides": "beides",
             "ich möchte ausprobieren": "ausprobieren",
         }
-        C["name"] = name
-        C["breakfast_preference"] = pref_map[breakfast_pref]
-        extra_veg = [x.strip() for x in other_veg.split(",") if x.strip()]
-        C["liked_vegetables"] = list(dict.fromkeys(liked_veg + extra_veg))
+        extra = [item.strip() for item in more_vegetables.split(",") if item.strip()]
+
+        C["name"] = name.strip()
+        C["preferences"]["breakfast"] = pref_map[breakfast_label]
+        C["preferences"]["vegetables"] = list(dict.fromkeys(vegetables + extra))
         C["anamnesis"] = {
-            "digestion": digestion, "body": body, "food_habits": food_habits,
-            "thermal": thermal, "sleep": sleep, "energy": energy,
-            "stagnation": stagnation, "free_note": free_note,
+            "concerns": concerns,
+            "digestion": digestion,
+            "body": body,
+            "thermal": thermal,
+            "sleep": sleep,
+            "energy": energy,
+            "food_habits": food_habits,
+            "emotions": emotions,
+            "free_note": free_note,
         }
-        C["provisional_assessment"] = score_anamnesis(C["anamnesis"])
+        C["assessment"] = assess_anamnesis(C["anamnesis"])
         C["onboarding_complete"] = True
         C["approved"] = False
-        C["approved_direction"] = None
-        st.success("Danke 🌿 Deine Angaben sind gespeichert. Katharina prüft jetzt die vorläufige Begleitrichtung.")
+        st.session_state.view = "katharina"
         st.rerun()
 
 
-def katharina():
+def render_katharina_dashboard():
     st.title("Katharina-Dashboard 🪴")
 
     if not C.get("onboarding_complete"):
-        st.info("Die Demo-Anamnese wurde noch nicht abgeschlossen.")
-        st.write("Wechsle zu **🌿 Klientin**, fülle die Anamnese aus und komm danach zurück.")
+        st.info("Noch keine Anamnese abgeschlossen.")
         return
 
-    a = C.get("anamnesis", {})
-    assessment = C.get("provisional_assessment", {})
-    scores = assessment.get("scores", {})
-    ranked = assessment.get("ranked", [])
+    assessment = C["assessment"]
+    st.subheader(f"{client_name()} – vorläufiges Gesamtbild")
+    st.caption("Interne Orientierung zur fachlichen Freigabe, keine Diagnose.")
 
-    st.subheader(f"{C['name']} – vorläufiges Gesamtbild")
-    st.caption("Systemgewichtung zur fachlichen Prüfung – keine endgültige Diagnose.")
+    score_text = " · ".join(
+        f"{name}: {value}"
+        for name, value in assessment["ranked"]
+        if value > 0
+    )
+    st.write("**Gewichtung:** " + (score_text or "noch nicht deutlich"))
 
-    if ranked:
-        top_text = " · ".join([f"{name}: {score}" for name, score in ranked if score > 0])
-        st.write("**Gewichtung:** " + (top_text or "noch keine deutliche Gewichtung"))
-
-    for key, score in ranked:
-        if score <= 0:
+    for name, value in assessment["ranked"]:
+        if value <= 0:
             continue
-        with st.expander(f"{key} – Gewicht {score}"):
-            for reason in assessment.get("reasons", {}).get(key, []):
+        with st.expander(f"{name} – Gewicht {value}"):
+            for reason in assessment["reasons"][name]:
                 st.write("• " + reason)
 
-    if assessment.get("contradictions"):
-        st.subheader("Widersprüche / gemeinsam auftretende Hinweise")
-        for item in assessment["contradictions"]:
-            st.warning(item)
+    for warning in assessment["contradictions"]:
+        st.warning(warning)
 
     st.subheader("Katharina-Blick – Prioritätsvorschlag")
-    current_heat_signals = []
-    if "Hitzegefühl" in a.get("body", []):
-        current_heat_signals.append("Hitzegefühl")
-    if "starkes Schwitzen" in a.get("body", []):
-        current_heat_signals.append("starkes Schwitzen")
-    if "innere Unruhe mit Wärme" in a.get("body", []):
-        current_heat_signals.append("innere Unruhe mit Wärme")
-    if a.get("thermal") == "eher heiß / viel Schwitzen":
-        current_heat_signals.append("überwiegend heiß / viel Schwitzen")
-
-    dominant = ranked[0][0] if ranked and ranked[0][1] > 0 else None
-    underlying_ranked = [(name, score) for name, score in ranked if name != "Hitzehinweise" and score > 0]
-    underlying_pattern = underlying_ranked[0][0] if underlying_ranked else None
-    relevant_heat = len(current_heat_signals) >= 1 and scores.get("Hitzehinweise", 0) >= 3
-
-    if relevant_heat:
-        st.warning(
-            "Aktuell relevante Hitzehinweise wurden genannt: "
-            + ", ".join(current_heat_signals)
-            + ". Die Demo schlägt deshalb vor, Hitze kurzfristig zuerst zu berücksichtigen und nicht weiter zu fördern. "
-              "Danach das nächste relevante Grundmuster ohne Hitzehinweise priorisieren"
-            + (f" – derzeit: {underlying_pattern}." if underlying_pattern else ".")
-        )
+    if assessment["relevant_heat"]:
         sequence = "Hitze kurzfristig berücksichtigen"
-        if underlying_pattern:
-            sequence += f" → {underlying_pattern}"
-        if underlying_pattern != "Mitte stärken" and scores.get("Mitte stärken", 0) > 0:
+        if assessment["underlying"]:
+            sequence += f" → {assessment['underlying']}"
+        if assessment["underlying"] != "Mitte stärken" and assessment["scores"]["Mitte stärken"] > 0:
             sequence += " → Mitte stärken"
+        st.warning(
+            "Aktuelle Hitzehinweise: "
+            + ", ".join(assessment["heat_signals"])
+            + ". Hitze vorerst nicht weiter fördern."
+        )
         st.write("**Vorgeschlagene Reihenfolge:** " + sequence + ".")
-        if scores.get("Feuchtigkeit", 0) >= 4:
-            st.info(
-                "Feuchtigkeit ist gleichzeitig deutlich gewichtet. Der Hitzehinweis wird hier nicht wegen der bloßen Punktzahl vorgezogen, "
-                "sondern als kurzfristige Prioritätsprüfung vor einer möglichen ungünstigen Kombination von Hitze- und Feuchtigkeitshinweisen."
-            )
     else:
-        top_names = [name for name, score in ranked if score > 0][:3]
-        if top_names:
-            st.info(
-                "Vorrangig prüfen: " + " → ".join(top_names) + ". "
-                "Die Reihenfolge ist eine vorläufige Gewichtung aus der Demo-Anamnese und muss von Katharina fachlich freigegeben oder korrigiert werden."
-            )
-        else:
-            st.info("Aus der Demo-Anamnese ergibt sich noch keine klare Gewichtung.")
+        top = [name for name, value in assessment["ranked"] if value > 0][:3]
+        st.info("Vorrangig prüfen: " + " → ".join(top) if top else "Noch keine klare Richtung.")
 
-    st.caption("Prioritätsvorschlag = interne Demo-Entscheidungshilfe, keine Diagnose und keine automatische Behandlungsempfehlung.")
+    emotional = C["anamnesis"].get("emotions", [])
+    if emotional:
+        st.subheader("Emotionaler Gesamtblick")
+        st.warning(
+            "Selbstauskunft: " + " · ".join(emotional)
+            + ". Als Kontext und möglichen persönlichen Begleitbedarf prüfen; nicht automatisch diagnostizieren."
+        )
 
-    st.write("**Freie Angabe der Klientin:** " + (a.get("free_note") or "keine"))
-
-    st.subheader("Katharinas Entscheidung")
-    direction_options = [
+    directions = [
+        "Hitze kurzfristig berücksichtigen, danach Grundmuster weiterführen",
         "Feuchtigkeit angehen + Mitte stärken",
-        "Hitzehinweise zuerst berücksichtigen",
         "Kälte berücksichtigen + Mitte stärken",
         "Mitte stärken und Verdauung beobachten",
-        "Stagnationshinweise mit Bewegung/Entspannung begleiten",
+        "Stagnation mit Ernährung, Bewegung und Entspannung begleiten",
         "Gesamtbild noch nicht freigeben",
     ]
-    selected_direction = st.selectbox(
+    selected = st.selectbox(
         "Begleitrichtung",
-        direction_options,
-        index=direction_options.index(C["approved_direction"]) if C.get("approved_direction") in direction_options else 0,
+        directions,
+        index=directions.index(C["approved_direction"]) if C.get("approved_direction") in directions else 0,
     )
     note = st.text_area(
-        "Katharinas Notiz / Korrektur",
+        "Katharinas Notiz",
         value=C.get("approval_note", ""),
-        placeholder="Zum Beispiel: Feuchtigkeit für 2 Wochen vorrangig angehen, Kälte berücksichtigen, Hitze nicht weiter fördern ..."
+        placeholder="Zum Beispiel: zwei Wochen Feuchtigkeit angehen, Kälte berücksichtigen, Hitze nicht weiter fördern.",
     )
 
-    c1, c2 = st.columns(2)
-    with c1:
-        if st.button("Begleitrichtung freigeben", type="primary", use_container_width=True):
-            C["approved_direction"] = selected_direction
+    left, right = st.columns(2)
+    with left:
+        if st.button("Begleitung freigeben", type="primary", use_container_width=True):
+            C["approved_direction"] = selected
             C["approval_note"] = note
             C["approved"] = True
             C["day"] = 1
-            st.success("Freigegeben 🌿 Die Klientinnen-Begleitung kann starten.")
+            st.session_state.view = "client"
             st.rerun()
-    with c2:
+    with right:
         if st.button("Noch nicht freigeben", use_container_width=True):
-            C["approved_direction"] = "Gesamtbild noch nicht freigeben"
-            C["approval_note"] = note
             C["approved"] = False
-            st.info("Die tägliche Begleitung bleibt angehalten.")
+            C["approved_direction"] = selected
+            C["approval_note"] = note
             st.rerun()
-
-    if C.get("approved"):
-        st.success(f"**Freigegebene Richtung:** {C.get('approved_direction')}")
-        if C.get("approval_note"):
-            st.write("**Katharinas Notiz:** " + C["approval_note"])
-
-    if C.get("history"):
-        last = C["history"][-1]
-        st.subheader("Was ist seit dem letzten Check-in passiert?")
-        mv = last.get("morning_visit", {})
-        if mv:
-            st.write(
-                f"**Morgenbesuch Tag {last['day']}:** Schlaf: {mv.get('sleep')} · "
-                f"Körpergefühl: {', '.join(mv.get('body', []))} · "
-                f"Hunger: {mv.get('hunger')} · "
-                f"Beschäftigt durch: {mv.get('concern')}"
-            )
-        reaction_text = ", ".join(last.get("reaction", [])) if last.get("reaction") else "keine besondere Reaktion gemeldet"
-        st.write(f"**Tag {last['day']}** · Schlaf: {last['sleep']} · Körper: {last['body']} · Frühstück: {last['food']}")
-        st.write("**Reaktion:** " + reaction_text)
-
-    if C.get("open_review"):
-        st.subheader("🌿 Offener Katharina-Blick")
-        review = C["open_review"]
-        st.warning(
-            f"Seit Tag {review['since']}: wiederholt körperlich ungünstige Rückmeldungen. "
-            f"Aktuell genannt: {', '.join(review['reactions']) or 'keine Details'}."
-        )
-        d1, d2, d3 = st.columns(3)
-        with d1:
-            if st.button("Richtung beibehalten", use_container_width=True):
-                C["decision"] = "Richtung beibehalten"
-                C["open_review"] = None
-                C["breakfast_status"] = "pause"
-                st.rerun()
-        with d2:
-            if st.button("Rezept anpassen", use_container_width=True):
-                C["decision"] = "Rezept anpassen"
-                C["open_review"] = None
-                C["breakfast_status"] = "question_first"
-                st.rerun()
-        with d3:
-            if st.button("Schwerpunkt neu prüfen", use_container_width=True):
-                C["decision"] = "Schwerpunkt neu prüfen"
-                C["open_review"] = None
-                C["breakfast_status"] = "hold"
-                C["approved"] = False
-                st.rerun()
-
-    st.subheader("Küchenbaukasten – persönliche Faktoren")
-    if C.get("liked_vegetables"):
-        st.write("**Mag gerne:** " + " · ".join(C["liked_vegetables"]))
-    if C.get("kitchen_dislikes"):
-        st.write("**Mag derzeit nicht:** " + " · ".join(C["kitchen_dislikes"]))
-    if C.get("kitchen_missing"):
-        st.write("**Als nicht vorhanden markiert:** " + " · ".join(C["kitchen_missing"]))
 
     st.subheader("Verlauf")
-    if not C.get("history"):
-        st.caption("Noch keine Tagesrückmeldungen.")
+    if not C["history"]:
+        st.caption("Noch keine abgeschlossenen Tage.")
     else:
-        for h in reversed(C["history"]):
-            st.markdown(f"**Tag {h['day']}** – Schlaf: {h['sleep']} · Körper: {h['body']} · Frühstück: {h['food']}")
-            if h.get("reaction"):
-                st.write("Reaktion:", ", ".join(h["reaction"]))
+        for entry in reversed(C["history"]):
+            st.markdown(
+                f"**Tag {entry['day']}** · Morgen: {entry['morning_summary']} · "
+                f"Frühstück: {entry['breakfast_feedback']} · Abend: {entry['evening_summary']}"
+            )
             st.divider()
 
-def maria():
-    if not C.get("onboarding_complete"):
-        client_anamnesis()
-        return
 
-    if not C.get("approved"):
-        st.title(f"Danke, {C['name']} 🌿")
-        st.write("Deine Anamnese ist abgeschlossen. Katharina prüft jetzt deine vorläufige Begleitrichtung.")
-        st.info("In dieser Demo wechselst du jetzt in das Katharina-Dashboard und gibst die Richtung dort fachlich frei.")
-        return
-
+def morning_visit():
     st.title("🌸 Guten Morgen mit Katharina")
     st.markdown(
         f"""
-        <div class="card">
-        <h3>Guten Morgen, {C['name']} 🌿</h3>
-        <p>Schön, dass du wieder da bist.</p>
-        <p>Heute nehmen wir uns wieder zwei Minuten Zeit für dich.</p>
+        <div class="mm-card">
+          <div class="mm-title">Guten Morgen, {client_name()} 🌿</div>
+          <p>Schön, dass du wieder da bist.</p>
+          <p>Heute nehmen wir uns zwei Minuten Zeit für dich.</p>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
-    st.subheader("Katharinas Morgenbesuch")
     sleep = st.radio(
         "Wie hast du heute geschlafen?",
-        ["sehr gut", "gut", "unruhig", "ich bin oft aufgewacht", "ich fühle mich müde"],
+        ["sehr gut", "gut", "unruhig", "oft aufgewacht", "morgens nicht erholt"],
         index=None,
-        key=f"morning_sleep_{C['day']}"
+        key=f"m_sleep_{C['day']}",
     )
-    morning_body = st.multiselect(
+    body = st.multiselect(
         "Wie fühlst du dich heute?",
         ["leicht", "voller Energie", "müde", "aufgebläht", "schwer", "unruhig", "ich friere", "mir ist warm"],
-        key=f"morning_body_{C['day']}"
+        key=f"m_body_{C['day']}",
     )
     hunger = st.radio(
         "Hast du heute Morgen Hunger?",
         ["ja", "ein bisschen", "nein"],
         index=None,
-        key=f"morning_hunger_{C['day']}"
+        key=f"m_hunger_{C['day']}",
     )
     concern = st.radio(
         "Gibt es heute etwas, das dich beschäftigt?",
         ["nein", "Stress", "Sorgen", "Traurigkeit", "Wut", "etwas anderes"],
         index=None,
-        key=f"morning_concern_{C['day']}"
+        key=f"m_concern_{C['day']}",
     )
-    concern_note = ""
+
+    extra = ""
     if concern == "etwas anderes":
-        concern_note = st.text_input(
-            "Magst du es kurz beschreiben?",
-            key=f"morning_concern_note_{C['day']}"
-        )
+        extra = st.text_input("Magst du es kurz beschreiben?", key=f"m_extra_{C['day']}")
 
-    morning_ready = bool(
-        sleep and morning_body and hunger and concern
-        and (concern != "etwas anderes" or concern_note.strip())
-    )
-    if not morning_ready:
-        st.info("Beantworte bitte die vier kurzen Morgenfragen. Danach bekommst du deine heutige Richtung.")
-        return
+    ready = bool(sleep and body and hunger and concern and (concern != "etwas anderes" or extra.strip()))
+    if not ready:
+        st.info("Beantworte bitte die vier kurzen Fragen. Danach erscheint dein heutiger Besuch.")
+        return None
 
-    C["morning_visit_answers"][C["day"]] = {
+    answers = {
         "sleep": sleep,
-        "body": morning_body,
+        "body": body,
         "hunger": hunger,
         "concern": concern,
-        "concern_note": concern_note,
+        "extra": extra,
     }
+    C["morning"][C["day"]] = answers
 
     st.subheader("🌿 Warum heute diese Richtung?")
     reasons = []
-    if "mir ist warm" in morning_body:
-        reasons.append("Heute zeigt dein Körper mehr Wärme. Deshalb wählen wir eine Richtung, die diese Tendenz nicht zusätzlich fördert.")
-    if "ich friere" in morning_body:
+    if "mir ist warm" in body:
+        reasons.append("Heute zeigt dein Körper mehr Wärme. Wir fördern diese Tendenz nicht zusätzlich.")
+    if "ich friere" in body:
         reasons.append("Heute darf dein Morgen sanft und angenehm warm beginnen.")
-    if "aufgebläht" in morning_body or "schwer" in morning_body:
-        reasons.append("Heute halten wir dein Frühstück eher ruhig, gekocht und gut überschaubar.")
+    if "aufgebläht" in body or "schwer" in body:
+        reasons.append("Heute halten wir das Frühstück eher ruhig, gekocht und überschaubar.")
     if hunger == "nein":
-        reasons.append("Da du heute wenig Hunger hast, achten wir besonders auf eine kleinere, leichte Portion.")
+        reasons.append("Da du wenig Hunger hast, wählen wir eine kleinere Portion.")
     if not reasons:
-        reasons.append("Heute bleiben wir bei kleinen, gut verträglichen Schritten und beobachten deinen Körper weiter.")
+        reasons.append("Heute bleiben wir bei kleinen, gut verträglichen Schritten.")
     for reason in reasons:
         st.write(reason)
 
     st.subheader("🌸 Katharinas Tagesimpuls")
-    if concern in ["Stress", "Sorgen", "Traurigkeit", "Wut"] or "unruhig" in morning_body:
-        st.info("Nimm dir vor dem Frühstück einen kurzen Moment. Atme ruhig aus und spüre beide Füße am Boden.")
-    elif "ich friere" in morning_body:
-        st.info("Reibe deine Hände warm und lege sie für einen Moment auf deinen unteren Rücken. Bleib angenehm warm und atme ruhig.")
-    elif "aufgebläht" in morning_body or "schwer" in morning_body:
-        st.info("Iss heute bewusst langsam und lege den Löffel zwischendurch einmal ab.")
+    if concern in {"Stress", "Sorgen", "Traurigkeit", "Wut"} or "unruhig" in body:
+        st.info("Atme vor dem Frühstück ruhig aus und spüre beide Füße am Boden.")
+    elif "ich friere" in body:
+        st.info("Reibe deine Hände warm und lege sie kurz auf deinen unteren Rücken.")
+    elif "aufgebläht" in body or "schwer" in body:
+        st.info("Iss langsam und lege den Löffel zwischendurch einmal ab.")
     else:
-        st.info("Heute darfst du freundlich mit dir beginnen. Ein kleiner ruhiger Schritt reicht.")
+        st.info("Ein kleiner bewusster Schritt reicht heute vollkommen.")
 
     st.markdown(
         """
-        <div class="card">
-        <h4>💚 Katharinas Gedanke</h4>
-        <p>Du musst heute nicht perfekt sein. Kleine Schritte dürfen leicht sein.</p>
+        <div class="mm-soft">
+          <strong>💚 Katharinas Gedanke</strong>
+          <p>Du musst heute nicht perfekt sein. Kleine Schritte dürfen leicht sein.</p>
         </div>
         """,
         unsafe_allow_html=True,
     )
-    st.caption(f"Tag {C['day']} von 14 · fiktive Demo")
+    return answers
 
-    st.markdown("**Wie magst du dein Frühstück grundsätzlich lieber?**")
-    pref_label = st.radio(
-        "Frühstücksvorliebe",
-        ["süß und weich/breiig", "pikant und mit Kauanteil", "beides", "ich möchte ausprobieren"],
-        index={"suess": 0, "pikant": 1, "beides": 2, "ausprobieren": 3}.get(C.get("breakfast_preference"), 3),
-        label_visibility="collapsed",
+
+def kitchen_idea():
+    liked = C["preferences"].get("vegetables", [])
+    if not liked:
+        liked = ["Zucchini", "Karotte / Möhre", "Kürbis"]
+    index = (C["day"] - 1) % len(liked)
+    selected = [liked[index]]
+    if len(liked) > 1:
+        selected.append(liked[(index + 1) % len(liked)])
+
+    st.subheader("🥕 Katharinas Mittagsidee")
+    st.write(
+        "Heute wünsche ich dir etwas Warmes und Einfaches. Das Gemüse darf nach deinem Geschmack ausgewählt werden."
     )
-    C["breakfast_preference"] = {
-        "süß und weich/breiig": "suess",
-        "pikant und mit Kauanteil": "pikant",
-        "beides": "beides",
-        "ich möchte ausprobieren": "ausprobieren",
-    }[pref_label]
+    st.write("**Heute kombinieren:** Reis · " + " und ".join(selected))
 
-    if not C["approved"]:
-        card("Katharina schaut noch kurz drüber",
-             "Deine erste Begleitrichtung ist noch nicht freigegeben. In der Demo kannst du in die Katharina-Ansicht wechseln.")
-        return
+    st.markdown("**Gemüse im eigenen Saft:**")
+    st.write("1. Gemüse klein schneiden und direkt in einen Topf mit gut schließendem Deckel geben.")
+    st.write("2. Eine kleine Prise Himalayasalz dazugeben.")
+    st.write("3. Je nach Begleitrichtung einige Butterflocken ergänzen oder bewusst weglassen.")
+    st.write("4. Bei mittlerer bis eher sanfter Hitze 5–10 Minuten unter Beobachtung garen.")
+    st.write("5. Deckel möglichst geschlossen lassen, damit der Dampf im Topf bleibt.")
+    st.write("6. Mit Reis kombinieren; ein Ei kann passend zur individuellen Richtung ergänzt werden.")
 
-    # Die internen Tageswerte werden aus Katharinas Morgenbesuch abgeleitet.
-    body = (
-        "innerlich gestaut / angespannt"
-        if ("unruhig" in morning_body or concern in ["Stress", "Sorgen", "Wut"])
-        else "eher kalt" if "ich friere" in morning_body
-        else "schwer / träge" if ("schwer" in morning_body or "aufgebläht" in morning_body)
-        else "warm und angenehm" if "mir ist warm" in morning_body
-        else "leicht"
-    )
 
-    question_answers = {}
-    filters = derive_recipe_filters()
+def evening_check():
+    st.title("🌙 Katharinas Abendblick")
+    st.write("Schön, dass du heute noch einmal kurz da bist.")
 
-    if C.get("breakfast_status") == "question_first":
-        card("Heute frage ich zuerst kurz nach",
-             "Katharina möchte nicht einfach die nächste Frühstücksvariante ausprobieren. Vier kurze Antworten helfen bei der Anpassung.")
-        question_answers["timing"] = st.radio("Wann beginnt Völlegefühl oder Druck meistens?",
-            ["direkt beim/kurz nach dem Essen", "30–90 Minuten später", "erst deutlich später", "unterschiedlich"], index=None)
-        question_answers["amount"] = st.radio("Wie war die Frühstücksmenge für dich?",
-            ["eher klein", "passend", "eher groß"], index=None)
-        question_answers["pace"] = st.radio("Wie hast du gegessen?",
-            ["ruhig und langsam", "normal", "eher schnell / nebenbei"], index=None)
-        question_answers["thermal"] = st.radio("Was ist dir thermisch aufgefallen?",
-            ["mehr Kälte", "angenehm warm", "mehr Hitze / Schwitzen", "nichts Besonderes"], index=None)
-
-        if all(question_answers.values()):
-            # Antworten sofort in die heutige Auswahl einbeziehen.
-            if question_answers["thermal"] == "mehr Hitze / Schwitzen" and "HITZEFILTER" not in filters:
-                filters.append("HITZEFILTER")
-                C["active_recipe_filters"] = filters
-
-            large_fast = (
-                question_answers["amount"] == "eher groß"
-                and question_answers["pace"] == "eher schnell / nebenbei"
-            )
-            # V7-Reihenfolge:
-            # 1. Thermik-/Ausschlussfilter
-            # 2. erlaubte Rezeptauswahl
-            # 3. Verträglichkeit/Vereinfachung
-            # 4. Portions- und Essverhalten
-            recipe = choose_breakfast(
-                C["day"],
-                prefer_simple=not large_fast,
-                active_filters=filters,
-                preference=C.get("breakfast_preference"),
-            )
-
-            # Zusätzliche Sicherung: Ein durch aktive Filter gesperrtes
-            # Rezept darf nicht angezeigt werden.
-            if not recipe_is_allowed(recipe, filters):
-                recipe = {
-                    "name": "Frühstück fachlich prüfen",
-                    "desc": "Die bisherige Variante passt nicht zu den aktuell aktiven Rezeptfiltern.",
-                    "tags": set(),
-                    "ingredients": set(),
-                }
-
-            if large_fast:
-                recipe_card(
-                    recipe,
-                    "Heute darf dein Frühstück etwas ruhiger und leichter sein. "
-                    "Wir probieren eine kleinere Portion und geben deinem Körper beim Essen mehr Zeit."
-                )
-                st.caption("Kleinere Portion · langsam essen · kurze Pause bei angenehmer Sättigung.")
-            else:
-                recipe_card(
-                    recipe,
-                    "Heute probieren wir eine sanftere Frühstücksvariante und beobachten, wie sie dir bekommt."
-                )
-
-            if "HITZEFILTER" in filters:
-                st.info("Der aktuelle Hitzehinweis wird heute zuerst berücksichtigt: Hafer und Haferdrink sowie automatisch stark wärmende Zutaten und Gewürze werden aus der heutigen Auswahl herausgefiltert.")
-
-            food = st.radio("Wie ist dir das angepasste Frühstück bekommen?",
-                            ["gut", "geschmacklich nicht meins", "körperlich nicht gut"], index=None)
-            reaction = []
-        else:
-            st.info("Beantworte bitte die vier kurzen Fragen. Danach erscheint noch heute deine angepasste Frühstücksrichtung.")
-            food = None
-            reaction = []
-
-    elif C.get("breakfast_status") == "hold":
-        card("Katharina prüft die Begleitrichtung",
-             "Hier wurde ausdrücklich „Schwerpunkt neu prüfen“ gewählt. Deshalb wird keine neue Rezeptlogik automatisch freigegeben.")
-        food = "Schwerpunktprüfung"
-        reaction = []
-
-    else:
-        recipe = choose_breakfast(
-            C["day"],
-            prefer_simple=C.get("breakfast_status") == "pause",
-            active_filters=filters,
-            preference=C.get("breakfast_preference"),
-        )
-        if C.get("breakfast_status") == "pause":
-            recipe_card(
-                recipe,
-                "Heute bekommt dein Bauch eine sanftere Frühstücksvariante. Beobachte einfach, wie sie dir bekommt."
-            )
-        else:
-            recipe_card(recipe, "Hier ist dein Frühstück für heute.")
-        if "HITZEFILTER" in filters:
-            st.info("Aktueller Hitzehinweis berücksichtigt: Hafer und Haferdrink sind heute nicht in der Auswahl.")
-        food = st.radio("Wie ist dir das Frühstück bekommen?",
-                        ["gut", "geschmacklich nicht meins", "körperlich nicht gut"], index=None)
-        reaction = []
-
-    if food == "körperlich nicht gut":
-        reaction = st.multiselect("Was ist dir aufgefallen?", [
-            "Völlegefühl / Druck", "Blähungen", "Bauchschmerzen", "Übelkeit",
-            "weicher Stuhl / Durchfall", "trockener / schwieriger Stuhl",
-            "stärkeres Kältegefühl", "Hitzegefühl / starkes Schwitzen",
-            "Müdigkeit / Schwere", "Unruhe / Herzklopfen", "etwas anderes"
-        ])
-
-    st.divider()
-    st.subheader("Deine warme Gemüseidee heute")
-    st.write("Du kannst Gemüse im Dampfgarer zubereiten oder sanft im eigenen Saft garen.")
-    st.write("Beim sanft gegarten Gemüse steht hier zuerst im Vordergrund, was dir schmeckt und was du gut verträgst.")
-
-    all_veg_names = [v["name"] for v in KITCHEN_COMPONENTS["vegetables"]]
-    liked_veg = st.multiselect(
-        "Welches Gemüse magst du gerne?",
-        all_veg_names,
-        default=C.get("liked_vegetables", []),
-        key="liked_vegetables_selector"
-    )
-    C["liked_vegetables"] = liked_veg
-
-    idea = build_kitchen_idea(
-        filters=filters,
-        variant=C.get("kitchen_variant", 0),
-        dislikes=C.get("kitchen_dislikes", []),
-        missing=C.get("kitchen_missing", []),
-        evening=False,
-    )
-    kitchen_card(idea, "Gemüse im eigenen Saft – deine heutige Kombination")
-
-    kitchen_feedback = st.radio(
-        "Passt diese Kombination heute für dich?",
-        ["Ja, passt", "Das mag ich nicht", "Das habe ich nicht zu Hause", "Heute lieber eine andere Kombination"],
+    breakfast_feedback = st.radio(
+        "Wie ist dir dein Frühstück bekommen?",
+        ["sehr gut", "ganz okay", "nicht so gut", "körperlich deutlich ungünstig"],
         index=None,
-        key=f"kitchen_feedback_{C['day']}_{C.get('kitchen_variant', 0)}"
+        key=f"e_breakfast_{C['day']}",
+    )
+    digestion = st.radio(
+        "Wie war deine Verdauung heute?",
+        ["ruhig / unauffällig", "etwas aufgebläht", "schwer / träge", "weicher Stuhl", "trockener Stuhl", "sehr unterschiedlich"],
+        index=None,
+        key=f"e_digestion_{C['day']}",
+    )
+    energy = st.radio(
+        "Wie war deine Energie heute?",
+        ["stabil", "eher gut", "müde", "Einbruch nach dem Essen", "unruhig / angespannt"],
+        index=None,
+        key=f"e_energy_{C['day']}",
+    )
+    note = st.text_area(
+        "Möchtest du Katharina noch etwas erzählen?",
+        key=f"e_note_{C['day']}",
     )
 
-    if kitchen_feedback == "Das mag ich nicht" and idea:
-        disliked = st.multiselect(
-            "Was davon magst du nicht?",
-            [idea["base"]] + idea["vegetables"] + [idea["extra"]],
-            key=f"dislike_{C['day']}_{C.get('kitchen_variant', 0)}"
+    if st.button(
+        "Tag abschließen",
+        type="primary",
+        use_container_width=True,
+        disabled=not (breakfast_feedback and digestion and energy),
+    ):
+        C["evening"][C["day"]] = {
+            "breakfast_feedback": breakfast_feedback,
+            "digestion": digestion,
+            "energy": energy,
+            "note": note,
+        }
+        morning = C["morning"].get(C["day"], {})
+        C["history"].append(
+            {
+                "day": C["day"],
+                "morning_summary": f"{morning.get('sleep', '–')}, {', '.join(morning.get('body', []))}",
+                "breakfast_feedback": breakfast_feedback,
+                "evening_summary": f"Verdauung: {digestion}; Energie: {energy}",
+            }
         )
-        if disliked and st.button("Andere passende Kombination suchen", key=f"dislike_btn_{C['day']}_{C.get('kitchen_variant', 0)}"):
-            C["kitchen_dislikes"] = sorted(set(C["kitchen_dislikes"]) | set(disliked))
-            C["kitchen_variant"] += 1
-            st.rerun()
-
-    elif kitchen_feedback == "Das habe ich nicht zu Hause" and idea:
-        missing = st.multiselect(
-            "Was fehlt dir?",
-            [idea["base"]] + idea["vegetables"] + [idea["extra"]],
-            key=f"missing_{C['day']}_{C.get('kitchen_variant', 0)}"
-        )
-        if missing and st.button("Mit vorhandenen Alternativen neu zusammenstellen", key=f"missing_btn_{C['day']}_{C.get('kitchen_variant', 0)}"):
-            C["kitchen_missing"] = sorted(set(C["kitchen_missing"]) | set(missing))
-            C["kitchen_variant"] += 1
-            st.rerun()
-
-    elif kitchen_feedback == "Heute lieber eine andere Kombination":
-        if st.button("Neue Kombination anzeigen", key=f"variant_btn_{C['day']}_{C.get('kitchen_variant', 0)}"):
-            C["kitchen_variant"] += 1
-            st.rerun()
-
-    st.subheader("Dein kleiner Impuls")
-    if body == "innerlich gestaut / angespannt":
-        st.info("Heute wäre eher ein kurzer Regulations- oder Bewegungsimpuls passend als noch ein weiterer Ernährungstipp.")
-        impulse = st.radio("Was fühlt sich gut an?", ["EFT – Video folgt später", "Körper abklopfen", "Sanft bewegen", "Heute nichts"], index=None)
-    elif body == "eher kalt":
-        st.info("Heute darf der Morgen sanft und angenehm warm beginnen.")
-        impulse = st.radio("Was fühlt sich gut an?", ["Nierenbereich reiben & ruhig atmen", "Körper abklopfen", "Heute nichts"], index=None)
-    else:
-        impulse = st.radio("Möchtest du heute einen kleinen Impuls?", ["Körper abklopfen", "Ruhig atmen", "Heute nichts"], index=None)
-
-    ready_questions = C.get("breakfast_status") != "question_first" or all(question_answers.values())
-    if st.button("Tag speichern", type="primary", disabled=not (sleep and body and food and impulse and ready_questions)):
-        entry = {"day": C["day"], "sleep": sleep, "body": body, "food": food, "reaction": reaction, "impulse": impulse, "questions": question_answers, "morning_visit": C["morning_visit_answers"].get(C["day"], {})}
-        C["history"].append(entry)
-
-        # Simplified demo re-check logic
-        if food == "gut" and C.get("breakfast_status") in ("pause", "question_first"):
-            C["breakfast_status"] = None
-
-        if food == "körperlich nicht gut":
-            C["breakfast_status"] = "pause"
-            heat = ("Hitzegefühl / starkes Schwitzen" in reaction or question_answers.get("thermal") == "mehr Hitze / Schwitzen")
-            previous_bad = sum(1 for h in C["history"] if h["food"] == "körperlich nicht gut") >= 2
-            if previous_bad and not C.get("open_review"):
-                all_reactions = []
-                for h in C["history"]:
-                    all_reactions.extend(h.get("reaction", []))
-                C["open_review"] = {"since": C["day"], "reactions": sorted(set(all_reactions)), "heat": heat}
-                C["breakfast_status"] = "hold"
-
-        if C["day"] < 14: C["day"] += 1
-        st.success("Gespeichert 🌿 Morgen wird dein heutiger Verlauf mitberücksichtigt.")
+        st.success("Danke 🌿 Morgen schauen wir gemeinsam weiter.")
+        if C["day"] < 14:
+            C["day"] += 1
         st.rerun()
 
-def app():
-    if st.session_state.view == "katharina": katharina()
-    else: maria()
 
-app()
+def render_client_day():
+    if not C.get("started"):
+        render_welcome()
+        return
+
+    if not C.get("onboarding_complete"):
+        render_anamnesis()
+        return
+
+    if not C.get("approved"):
+        st.title(f"Danke, {client_name()} 🌿")
+        st.write("Katharina prüft deine vorläufige Begleitrichtung.")
+        st.info("Die 14-Tage-Begleitung startet nach der fachlichen Freigabe.")
+        return
+
+    st.caption(f"Tag {C['day']} von 14 · {C.get('approved_direction', '')}")
+
+    tab_morning, tab_kitchen, tab_evening = st.tabs(
+        ["🌞 Morgenbesuch", "🍲 Meine Mitte Küche", "🌙 Abendblick"]
+    )
+
+    with tab_morning:
+        answers = morning_visit()
+        if answers:
+            recipe = select_breakfast()
+            intro = (
+                "Heute darf dein Frühstück ruhig, warm gekocht und gut überschaubar sein. "
+                "Die Auswahl berücksichtigt deine Grundrichtung und deine Vorliebe."
+            )
+            render_recipe(recipe, intro)
+
+    with tab_kitchen:
+        kitchen_idea()
+
+    with tab_evening:
+        evening_check()
+
+    st.divider()
+    if st.button("Demo vollständig zurücksetzen"):
+        reset_demo()
+
+
+render_navigation()
+
+if st.session_state.view == "katharina":
+    render_katharina_dashboard()
+else:
+    render_client_day()
