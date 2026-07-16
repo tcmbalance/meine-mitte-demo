@@ -2,7 +2,7 @@
 import streamlit as st
 from datetime import date
 
-st.set_page_config(page_title="Meine Mitte V13", page_icon="🌿", layout="centered")
+st.set_page_config(page_title="Meine Mitte V14", page_icon="🌿", layout="centered")
 
 # DEMO ONLY: fictional local session data
 if "client" not in st.session_state:
@@ -25,6 +25,8 @@ C.setdefault("anamnesis", {})
 C.setdefault("provisional_assessment", {})
 C.setdefault("approved_direction", None)
 C.setdefault("approval_note", "")
+C.setdefault("morning_visit_answers", {})
+
 
 
 st.markdown("""
@@ -407,7 +409,7 @@ def client_anamnesis():
         "Bevor deine Begleitung startet, möchte ich ein erstes Bild von deinem Alltag und deinem Körpergefühl bekommen. "
         "Es geht nicht darum, etwas perfekt zu beantworten."
     )
-    st.caption("V13 ist eine Demo. Bitte hier noch keine echten Gesundheitsdaten von Klientinnen eingeben.")
+    st.caption("V14 ist eine Demo. Bitte hier noch keine echten Gesundheitsdaten von Klientinnen eingeben.")
 
     with st.form("anamnesis_form"):
         name = st.text_input("Wie darf ich dich ansprechen?", value=C.get("name", "Maria"))
@@ -645,6 +647,14 @@ def katharina():
     if C.get("history"):
         last = C["history"][-1]
         st.subheader("Was ist seit dem letzten Check-in passiert?")
+        mv = last.get("morning_visit", {})
+        if mv:
+            st.write(
+                f"**Morgenbesuch Tag {last['day']}:** Schlaf: {mv.get('sleep')} · "
+                f"Körpergefühl: {', '.join(mv.get('body', []))} · "
+                f"Hunger: {mv.get('hunger')} · "
+                f"Beschäftigt durch: {mv.get('concern')}"
+            )
         reaction_text = ", ".join(last.get("reaction", [])) if last.get("reaction") else "keine besondere Reaktion gemeldet"
         st.write(f"**Tag {last['day']}** · Schlaf: {last['sleep']} · Körper: {last['body']} · Frühstück: {last['food']}")
         st.write("**Reaktion:** " + reaction_text)
@@ -706,7 +716,99 @@ def maria():
         st.info("In dieser Demo wechselst du jetzt in das Katharina-Dashboard und gibst die Richtung dort fachlich frei.")
         return
 
-    st.title(f"Guten Morgen, {C['name']} 🌿")
+    st.title("🌸 Guten Morgen mit Katharina")
+    st.markdown(
+        f"""
+        <div class="card">
+        <h3>Guten Morgen, {C['name']} 🌿</h3>
+        <p>Schön, dass du wieder da bist.</p>
+        <p>Heute nehmen wir uns wieder zwei Minuten Zeit für dich.</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    st.subheader("Katharinas Morgenbesuch")
+    sleep = st.radio(
+        "Wie hast du heute geschlafen?",
+        ["sehr gut", "gut", "unruhig", "ich bin oft aufgewacht", "ich fühle mich müde"],
+        index=None,
+        key=f"morning_sleep_{C['day']}"
+    )
+    morning_body = st.multiselect(
+        "Wie fühlst du dich heute?",
+        ["leicht", "voller Energie", "müde", "aufgebläht", "schwer", "unruhig", "ich friere", "mir ist warm"],
+        key=f"morning_body_{C['day']}"
+    )
+    hunger = st.radio(
+        "Hast du heute Morgen Hunger?",
+        ["ja", "ein bisschen", "nein"],
+        index=None,
+        key=f"morning_hunger_{C['day']}"
+    )
+    concern = st.radio(
+        "Gibt es heute etwas, das dich beschäftigt?",
+        ["nein", "Stress", "Sorgen", "Traurigkeit", "Wut", "etwas anderes"],
+        index=None,
+        key=f"morning_concern_{C['day']}"
+    )
+    concern_note = ""
+    if concern == "etwas anderes":
+        concern_note = st.text_input(
+            "Magst du es kurz beschreiben?",
+            key=f"morning_concern_note_{C['day']}"
+        )
+
+    morning_ready = bool(
+        sleep and morning_body and hunger and concern
+        and (concern != "etwas anderes" or concern_note.strip())
+    )
+    if not morning_ready:
+        st.info("Beantworte bitte die vier kurzen Morgenfragen. Danach bekommst du deine heutige Richtung.")
+        return
+
+    C["morning_visit_answers"][C["day"]] = {
+        "sleep": sleep,
+        "body": morning_body,
+        "hunger": hunger,
+        "concern": concern,
+        "concern_note": concern_note,
+    }
+
+    st.subheader("🌿 Warum heute diese Richtung?")
+    reasons = []
+    if "mir ist warm" in morning_body:
+        reasons.append("Heute zeigt dein Körper mehr Wärme. Deshalb wählen wir eine Richtung, die diese Tendenz nicht zusätzlich fördert.")
+    if "ich friere" in morning_body:
+        reasons.append("Heute darf dein Morgen sanft und angenehm warm beginnen.")
+    if "aufgebläht" in morning_body or "schwer" in morning_body:
+        reasons.append("Heute halten wir dein Frühstück eher ruhig, gekocht und gut überschaubar.")
+    if hunger == "nein":
+        reasons.append("Da du heute wenig Hunger hast, achten wir besonders auf eine kleinere, leichte Portion.")
+    if not reasons:
+        reasons.append("Heute bleiben wir bei kleinen, gut verträglichen Schritten und beobachten deinen Körper weiter.")
+    for reason in reasons:
+        st.write(reason)
+
+    st.subheader("🌸 Katharinas Tagesimpuls")
+    if concern in ["Stress", "Sorgen", "Traurigkeit", "Wut"] or "unruhig" in morning_body:
+        st.info("Nimm dir vor dem Frühstück einen kurzen Moment. Atme ruhig aus und spüre beide Füße am Boden.")
+    elif "ich friere" in morning_body:
+        st.info("Reibe deine Hände warm und lege sie für einen Moment auf deinen unteren Rücken. Bleib angenehm warm und atme ruhig.")
+    elif "aufgebläht" in morning_body or "schwer" in morning_body:
+        st.info("Iss heute bewusst langsam und lege den Löffel zwischendurch einmal ab.")
+    else:
+        st.info("Heute darfst du freundlich mit dir beginnen. Ein kleiner ruhiger Schritt reicht.")
+
+    st.markdown(
+        """
+        <div class="card">
+        <h4>💚 Katharinas Gedanke</h4>
+        <p>Du musst heute nicht perfekt sein. Kleine Schritte dürfen leicht sein.</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
     st.caption(f"Tag {C['day']} von 14 · fiktive Demo")
 
     st.markdown("**Wie magst du dein Frühstück grundsätzlich lieber?**")
@@ -728,9 +830,15 @@ def maria():
              "Deine erste Begleitrichtung ist noch nicht freigegeben. In der Demo kannst du in die Katharina-Ansicht wechseln.")
         return
 
-    st.write("Heute reichen mir zwei kurze Antworten.")
-    sleep = st.radio("Wie war dein Schlaf?", ["erholsam", "eher okay", "unruhig", "schlecht"], index=None)
-    body = st.radio("Wie fühlt sich dein Körper heute an?", ["warm und angenehm", "eher kalt", "schwer / träge", "leicht", "innerlich gestaut / angespannt"], index=None)
+    # Die internen Tageswerte werden aus Katharinas Morgenbesuch abgeleitet.
+    body = (
+        "innerlich gestaut / angespannt"
+        if ("unruhig" in morning_body or concern in ["Stress", "Sorgen", "Wut"])
+        else "eher kalt" if "ich friere" in morning_body
+        else "schwer / träge" if ("schwer" in morning_body or "aufgebläht" in morning_body)
+        else "warm und angenehm" if "mir ist warm" in morning_body
+        else "leicht"
+    )
 
     question_answers = {}
     filters = derive_recipe_filters()
@@ -906,7 +1014,7 @@ def maria():
 
     ready_questions = C.get("breakfast_status") != "question_first" or all(question_answers.values())
     if st.button("Tag speichern", type="primary", disabled=not (sleep and body and food and impulse and ready_questions)):
-        entry = {"day": C["day"], "sleep": sleep, "body": body, "food": food, "reaction": reaction, "impulse": impulse, "questions": question_answers}
+        entry = {"day": C["day"], "sleep": sleep, "body": body, "food": food, "reaction": reaction, "impulse": impulse, "questions": question_answers, "morning_visit": C["morning_visit_answers"].get(C["day"], {})}
         C["history"].append(entry)
 
         # Simplified demo re-check logic
